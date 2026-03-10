@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 const ODDS_API_BASE = "https://api.the-odds-api.com/v4";
 
@@ -295,8 +295,6 @@ function buildStakePlan({ decA, decB, stake, kalshiLeg }) {
   };
 }
 
-// ── Kalshi Fetcher ──────────────────────────────────────────────────────────
-
 async function fetchKalshiGameMarkets(sport) {
   const cfg = KALSHI_GAME_SERIES[sport] || KALSHI_GAME_SERIES.nba;
   const markets = [];
@@ -376,8 +374,6 @@ async function fetchKalshiGameMarkets(sport) {
   return markets;
 }
 
-// ── Arb Finder ──────────────────────────────────────────────────────────────
-
 function findArbs(games, kalshiMarkets, stake, nearArbThreshold = 1.03) {
   const opps = [];
   let bestImpSum = Infinity;
@@ -439,7 +435,6 @@ function findArbs(games, kalshiMarkets, stake, nearArbThreshold = 1.03) {
   for (const game of games) {
     const bookNames = Object.keys(game.bookOdds);
 
-    // ── H2H: Best-line across ALL books ──
     let bestHomeDec = 0, bestHomeName = "", bestHomeAm = 0;
     let bestAwayDec = 0, bestAwayName = "", bestAwayAm = 0;
     for (const bn of bookNames) {
@@ -454,7 +449,6 @@ function findArbs(games, kalshiMarkets, stake, nearArbThreshold = 1.03) {
       record({ impSum, decA: bestHomeDec, decB: bestAwayDec, sideA: `${game.home} ML`, bookA: bestHomeName, americanA: bestHomeAm, sideB: `${game.away} ML`, bookB: bestAwayName, americanB: bestAwayAm, game, marketType: "h2h" });
     }
 
-    // ── H2H: Pairwise book-vs-book ──
     for (let i = 0; i < bookNames.length; i++) {
       for (let j = i + 1; j < bookNames.length; j++) {
         const b1 = bookNames[i], b2 = bookNames[j];
@@ -473,7 +467,6 @@ function findArbs(games, kalshiMarkets, stake, nearArbThreshold = 1.03) {
       }
     }
 
-    // ── SPREAD: Kalshi vs Books ──
     const spreadBooks = game.spreadOdds || {};
     const matchedKalshi = kalshiMarkets.filter(km => {
       if (km.type !== "spread" || km.parsedTeam == null || km.parsedSpread == null) return false;
@@ -536,7 +529,6 @@ function findArbs(games, kalshiMarkets, stake, nearArbThreshold = 1.03) {
         }
       }
 
-      // ── SPREAD: Best-line across books for this spread value ──
       let bestCoverDec = 0, bestCoverBook = "", bestCoverAm = 0;
       let bestOppDec = 0, bestOppBook = "", bestOppAm = 0;
       for (const [bookName, spreads] of Object.entries(spreadBooks)) {
@@ -582,7 +574,6 @@ function findArbs(games, kalshiMarkets, stake, nearArbThreshold = 1.03) {
       }
     }
 
-    // ── MONEYLINE: Kalshi vs Books ──
     const matchedKalshiML = kalshiMarkets.filter(km => {
       if (km.type !== "moneyline" || !km.parsedTeam) return false;
       return teamMatch(km.parsedTeam, game.home) || teamMatch(km.parsedTeam, game.away);
@@ -598,7 +589,6 @@ function findArbs(games, kalshiMarkets, stake, nearArbThreshold = 1.03) {
       const kalshiYesAm = kalshiYesDec ? decimalToAmerican(kalshiYesDec) : null;
       const kalshiNoAm = kalshiNoDec ? decimalToAmerican(kalshiNoDec) : null;
 
-      // Kalshi YES (team wins) vs best sportsbook ML on opponent
       let bestOppMLDec = 0, bestOppMLBook = "", bestOppMLAm = 0;
       for (const bn of bookNames) {
         const o = game.bookOdds[bn];
@@ -622,7 +612,6 @@ function findArbs(games, kalshiMarkets, stake, nearArbThreshold = 1.03) {
         });
       }
 
-      // Sportsbook ML on team vs Kalshi NO (team loses = opponent wins)
       let bestSameMLDec = 0, bestSameMLBook = "", bestSameMLAm = 0;
       for (const bn of bookNames) {
         const o = game.bookOdds[bn];
@@ -646,7 +635,6 @@ function findArbs(games, kalshiMarkets, stake, nearArbThreshold = 1.03) {
         });
       }
 
-      // Pairwise: Kalshi vs each individual book
       for (const bn of bookNames) {
         const o = game.bookOdds[bn];
         const oppAm = kalshiTeamIsHome ? o.away : o.home;
@@ -687,7 +675,6 @@ function findArbs(games, kalshiMarkets, stake, nearArbThreshold = 1.03) {
       }
     }
 
-    // ── SPREAD: Book-vs-book spread arbs (same spread line, different books) ──
     const spreadByLine = {};
     for (const [bookName, spreads] of Object.entries(spreadBooks)) {
       for (const line of spreads) {
@@ -724,7 +711,6 @@ function findArbs(games, kalshiMarkets, stake, nearArbThreshold = 1.03) {
     }
   }
 
-  // Deduplicate
   const seen = new Map();
   for (const opp of opps) {
     const key = `${opp.game}|${opp.sideA}|${opp.bookA}|${opp.sideB}|${opp.bookB}`;
@@ -736,6 +722,21 @@ function findArbs(games, kalshiMarkets, stake, nearArbThreshold = 1.03) {
   return { opps: deduped, bestImpSum, bestImpDetail };
 }
 
+// ── Shared styles ────────────────────────────────────────────────────────────
+
+const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+const MONO = "'SF Mono', 'Fira Code', 'Consolas', monospace";
+
+const badge = (color) => ({
+  fontSize: 10,
+  padding: "2px 7px",
+  background: `${color}14`,
+  border: `1px solid ${color}40`,
+  borderRadius: 3,
+  color,
+  fontWeight: 500,
+});
+
 // ── Setup Screen ─────────────────────────────────────────────────────────────
 
 function SetupScreen({ onStart }) {
@@ -743,45 +744,63 @@ function SetupScreen({ onStart }) {
   const [sport, setSport] = useState("nba");
   const [stake, setStake] = useState("100");
 
+  const inputStyle = {
+    width: "100%", padding: "10px 12px", background: "#0a0a0a",
+    border: "1px solid #2a2a2a", borderRadius: 4, color: "#e0e0e0",
+    fontSize: 13, fontFamily: FONT, outline: "none", boxSizing: "border-box",
+  };
+
   return (
-    <div style={{ minHeight: "100vh", background: "#0a0a0a", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace" }}>
-      <div style={{ width: 480, padding: 48, background: "linear-gradient(145deg, #111 0%, #1a1a1a 100%)", borderRadius: 2, border: "1px solid #222" }}>
-        <div style={{ marginBottom: 40 }}>
-          <div style={{ fontSize: 11, letterSpacing: 6, color: "#4caf50", marginBottom: 8, textTransform: "uppercase" }}>System</div>
-          <h1 style={{ fontSize: 28, color: "#fff", margin: 0, fontWeight: 400, letterSpacing: -0.5 }}>Arbitrage Scanner</h1>
-          <div style={{ fontSize: 12, color: "#555", marginTop: 8 }}>Kalshi x Multi-Book Cross-Exchange</div>
+    <div style={{ minHeight: "100vh", background: "#0a0a0a", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT }}>
+      <div style={{ width: 440, padding: "40px 36px", background: "#111", borderRadius: 6, border: "1px solid #1e1e1e" }}>
+        <div style={{ marginBottom: 32 }}>
+          <h1 style={{ fontSize: 22, color: "#e0e0e0", margin: 0, fontWeight: 600 }}>Arbitrage Scanner</h1>
+          <div style={{ fontSize: 13, color: "#666", marginTop: 6 }}>Kalshi + Multi-Book Cross-Exchange</div>
         </div>
-        <div style={{ marginBottom: 28 }}>
-          <label style={{ display: "block", fontSize: 10, letterSpacing: 3, color: "#666", marginBottom: 8, textTransform: "uppercase" }}>The Odds API Key</label>
-          <input type="text" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Get free key at the-odds-api.com"
-            style={{ width: "100%", padding: "14px 16px", background: "#0a0a0a", border: "1px solid #333", borderRadius: 2, color: "#fff", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: "block", fontSize: 12, color: "#888", marginBottom: 6, fontWeight: 500 }}>The Odds API Key</label>
+          <input type="text" value={apiKey} onChange={e => setApiKey(e.target.value)}
+            placeholder="Get free key at the-odds-api.com" style={inputStyle} />
         </div>
-        <div style={{ display: "flex", gap: 16, marginBottom: 28 }}>
+        <div style={{ display: "flex", gap: 14, marginBottom: 24 }}>
           <div style={{ flex: 1 }}>
-            <label style={{ display: "block", fontSize: 10, letterSpacing: 3, color: "#666", marginBottom: 8, textTransform: "uppercase" }}>League</label>
-            <div style={{ display: "flex", gap: 8 }}>
+            <label style={{ display: "block", fontSize: 12, color: "#888", marginBottom: 6, fontWeight: 500 }}>League</label>
+            <div style={{ display: "flex", gap: 6 }}>
               {["nba", "ncaab"].map(s => (
                 <button key={s} onClick={() => setSport(s)}
-                  style={{ flex: 1, padding: "12px 0", background: sport === s ? "#4caf50" : "#0a0a0a", border: `1px solid ${sport === s ? "#4caf50" : "#333"}`, borderRadius: 2, color: sport === s ? "#000" : "#666", fontSize: 12, fontFamily: "inherit", cursor: "pointer", fontWeight: sport === s ? 700 : 400, letterSpacing: 2, textTransform: "uppercase" }}>
+                  style={{
+                    flex: 1, padding: "9px 0",
+                    background: sport === s ? "#2a6e3f" : "#0a0a0a",
+                    border: `1px solid ${sport === s ? "#2a6e3f" : "#2a2a2a"}`,
+                    borderRadius: 4, color: sport === s ? "#fff" : "#888",
+                    fontSize: 12, fontFamily: FONT, cursor: "pointer",
+                    fontWeight: sport === s ? 600 : 400,
+                    textTransform: "uppercase",
+                  }}>
                   {s}
                 </button>
               ))}
             </div>
           </div>
           <div style={{ width: 120 }}>
-            <label style={{ display: "block", fontSize: 10, letterSpacing: 3, color: "#666", marginBottom: 8, textTransform: "uppercase" }}>Stake $</label>
-            <input type="number" value={stake} onChange={e => setStake(e.target.value)}
-              style={{ width: "100%", padding: "12px 16px", background: "#0a0a0a", border: "1px solid #333", borderRadius: 2, color: "#fff", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            <label style={{ display: "block", fontSize: 12, color: "#888", marginBottom: 6, fontWeight: 500 }}>Stake ($)</label>
+            <input type="number" value={stake} onChange={e => setStake(e.target.value)} style={inputStyle} />
           </div>
         </div>
         <button onClick={() => apiKey && onStart({ apiKey, sport, stake: parseFloat(stake) || 100 })} disabled={!apiKey}
-          style={{ width: "100%", padding: 16, background: apiKey ? "#4caf50" : "#222", border: "none", borderRadius: 2, color: apiKey ? "#000" : "#555", fontSize: 13, fontFamily: "inherit", cursor: apiKey ? "pointer" : "default", fontWeight: 700, letterSpacing: 3, textTransform: "uppercase" }}>
-          Initialize Scanner
+          style={{
+            width: "100%", padding: 12,
+            background: apiKey ? "#2a6e3f" : "#1a1a1a",
+            border: "none", borderRadius: 4,
+            color: apiKey ? "#fff" : "#555",
+            fontSize: 14, fontFamily: FONT, fontWeight: 600,
+            cursor: apiKey ? "pointer" : "default",
+          }}>
+          Start Scanner
         </button>
-        <div style={{ marginTop: 24, padding: 16, background: "#0d1f0d", borderRadius: 2, border: "1px solid #1b3a1b" }}>
-          <div style={{ fontSize: 10, color: "#4caf50", letterSpacing: 2, marginBottom: 6, textTransform: "uppercase" }}>Setup</div>
-          <div style={{ fontSize: 11, color: "#888", lineHeight: 1.6 }}>
-            1. Get a free API key at <span style={{ color: "#4caf50" }}>the-odds-api.com</span> (500 req/mo)<br/>
+        <div style={{ marginTop: 20, padding: 14, background: "#0c0c0c", borderRadius: 4, border: "1px solid #1e1e1e" }}>
+          <div style={{ fontSize: 12, color: "#888", lineHeight: 1.7 }}>
+            1. Get a free API key at <span style={{ color: "#5a9e6f" }}>the-odds-api.com</span> (500 req/mo)<br/>
             2. Kalshi game spreads fetched via authenticated proxy<br/>
             3. Scanner compares Kalshi spreads vs DraftKings, FanDuel, BetMGM, etc.
           </div>
@@ -805,6 +824,11 @@ function Dashboard({ config }) {
   const [lastUpdate, setLastUpdate] = useState(null);
   const [remaining, setRemaining] = useState("?");
   const [tab, setTab] = useState("arbs");
+  const [stake, setStake] = useState(config.stake);
+  const [stakeInput, setStakeInput] = useState(String(config.stake));
+
+  const stakeRef = useRef(stake);
+  stakeRef.current = stake;
 
   const ODDS_CACHE_KEY = `odds_cache_${config.sport}`;
   const ODDS_CACHE_TTL = 24 * 60 * 60 * 1000;
@@ -878,10 +902,6 @@ function Dashboard({ config }) {
 
       setGames(parsed);
       setKalshiMarkets(kalshiResult);
-      const result = findArbs(parsed, kalshiResult, config.stake);
-      setArbs(result.opps);
-      setBestImpSum(result.bestImpSum);
-      setBestImpDetail(result.bestImpDetail);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -893,6 +913,20 @@ function Dashboard({ config }) {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    if (games.length === 0 && kalshiMarkets.length === 0) return;
+    const result = findArbs(games, kalshiMarkets, stake);
+    setArbs(result.opps);
+    setBestImpSum(result.bestImpSum);
+    setBestImpDetail(result.bestImpDetail);
+  }, [stake, games, kalshiMarkets]);
+
+  function commitStake() {
+    const v = parseFloat(stakeInput);
+    if (v && v > 0) setStake(v);
+    else setStakeInput(String(stake));
+  }
+
   const trueArbs = arbs.filter(a => a.isTrueArb);
   const nearArbs = arbs.filter(a => !a.isTrueArb);
   const arbCount = trueArbs.length;
@@ -903,54 +937,86 @@ function Dashboard({ config }) {
   const bestRoi = trueArbs.length ? trueArbs[0].roi : 0;
   const gapFromArb = bestImpSum && bestImpSum < Infinity ? ((bestImpSum - 1) * 100) : null;
 
+  const statColor = (val, threshold) => val > 0 ? "#5a9e6f" : "#666";
+
   return (
-    <div style={{ minHeight: "100vh", background: "#0a0a0a", fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace", color: "#ccc" }}>
+    <div style={{ minHeight: "100vh", background: "#0a0a0a", fontFamily: FONT, color: "#bbb" }}>
       {/* Header */}
-      <div style={{ padding: "20px 32px", borderBottom: "1px solid #1a1a1a", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+      <div style={{ padding: "16px 28px", borderBottom: "1px solid #1a1a1a", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <div>
-            <span style={{ fontSize: 11, letterSpacing: 4, color: "#4caf50", textTransform: "uppercase" }}>Live</span>
-            <h1 style={{ margin: 0, fontSize: 18, color: "#fff", fontWeight: 400 }}>Arb Scanner — {config.sport.toUpperCase()}</h1>
+            <h1 style={{ margin: 0, fontSize: 16, color: "#e0e0e0", fontWeight: 600 }}>Arb Scanner <span style={{ fontWeight: 400, color: "#666" }}>/ {config.sport.toUpperCase()}</span></h1>
           </div>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: loading ? "#ff9800" : error ? "#f44336" : "#4caf50", animation: loading ? "pulse 1s infinite" : "none" }} />
+          <div style={{
+            width: 7, height: 7, borderRadius: "50%",
+            background: loading ? "#c89030" : error ? "#c04040" : "#5a9e6f",
+            animation: loading ? "pulse 1.2s infinite" : "none",
+          }} />
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 11, color: "#555" }}>
-          <span>API left: <span style={{ color: "#4caf50" }}>{remaining}</span></span>
-          <span>Odds: {lastUpdate ? lastUpdate.toLocaleDateString() : "—"}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 12, color: "#555" }}>
+          <span>API: <span style={{ color: "#5a9e6f" }}>{remaining}</span></span>
+          <span>{lastUpdate ? lastUpdate.toLocaleDateString() : "—"}</span>
           <button onClick={() => fetchData(false)} disabled={loading}
-            style={{ padding: "8px 12px", background: "#1a1a1a", border: "1px solid #333", borderRadius: 2, color: "#4caf50", fontSize: 10, fontFamily: "inherit", cursor: "pointer", letterSpacing: 2, textTransform: "uppercase" }}>
+            style={{
+              padding: "6px 12px", background: "#151515", border: "1px solid #2a2a2a",
+              borderRadius: 4, color: "#5a9e6f", fontSize: 11, fontFamily: FONT,
+              cursor: "pointer", fontWeight: 500,
+            }}>
             Refresh Kalshi
           </button>
           <button onClick={() => { if (confirm("This uses an Odds API call. Continue?")) fetchData(true); }} disabled={loading}
-            style={{ padding: "8px 12px", background: "#1a1a1a", border: "1px solid #553300", borderRadius: 2, color: "#ff9800", fontSize: 10, fontFamily: "inherit", cursor: "pointer", letterSpacing: 2, textTransform: "uppercase" }}>
+            style={{
+              padding: "6px 12px", background: "#151515", border: "1px solid #3a2a00",
+              borderRadius: 4, color: "#c89030", fontSize: 11, fontFamily: FONT,
+              cursor: "pointer", fontWeight: 500,
+            }}>
             Force Odds Refresh
           </button>
         </div>
       </div>
 
       {/* Stats Bar */}
-      <div style={{ display: "flex", padding: "0 32px", borderBottom: "1px solid #1a1a1a", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", padding: "0 28px", borderBottom: "1px solid #1a1a1a", flexWrap: "wrap", alignItems: "center" }}>
         {[
-          { label: "Games", value: gameCount, color: "#fff" },
-          { label: "Kalshi Mkts", value: kalshiMarkets.length, color: kalshiError ? "#ff9800" : "#00bcd4" },
-          { label: "True Arbs", value: arbCount, color: arbCount > 0 ? "#4caf50" : "#666" },
-          { label: "Near Arbs", value: nearArbs.length, color: nearArbs.length > 0 ? "#ff9800" : "#666" },
-          { label: "Moneyline", value: mlArbCount, color: mlArbCount > 0 ? "#64b5f6" : "#666" },
-          { label: "Spread", value: spreadArbCount, color: spreadArbCount > 0 ? "#ce93d8" : "#666" },
-          { label: "Kalshi Arbs", value: kalshiArbCount, color: kalshiArbCount > 0 ? "#00bcd4" : "#666" },
-          { label: "Best ROI", value: bestRoi > 0 ? `${bestRoi.toFixed(2)}%` : "—", color: bestRoi > 0 ? "#4caf50" : "#666" },
-          { label: "Gap to Arb", value: gapFromArb != null ? `${gapFromArb.toFixed(2)}%` : "—", color: gapFromArb != null && gapFromArb <= 0 ? "#4caf50" : gapFromArb != null && gapFromArb < 2 ? "#ff9800" : "#666" },
-          { label: "Stake", value: `$${config.stake}`, color: "#fff" },
+          { label: "Games", value: gameCount, color: "#ccc" },
+          { label: "Kalshi Mkts", value: kalshiMarkets.length, color: kalshiError ? "#c89030" : "#5a8fae" },
+          { label: "True Arbs", value: arbCount, color: arbCount > 0 ? "#5a9e6f" : "#555" },
+          { label: "Near Arbs", value: nearArbs.length, color: nearArbs.length > 0 ? "#c89030" : "#555" },
+          { label: "ML", value: mlArbCount, color: mlArbCount > 0 ? "#6a9fd8" : "#555" },
+          { label: "Spread", value: spreadArbCount, color: spreadArbCount > 0 ? "#a07dba" : "#555" },
+          { label: "Kalshi", value: kalshiArbCount, color: kalshiArbCount > 0 ? "#5a8fae" : "#555" },
+          { label: "Best ROI", value: bestRoi > 0 ? `${bestRoi.toFixed(2)}%` : "—", color: bestRoi > 0 ? "#5a9e6f" : "#555" },
+          { label: "Gap", value: gapFromArb != null ? `${gapFromArb.toFixed(2)}%` : "—", color: gapFromArb != null && gapFromArb <= 0 ? "#5a9e6f" : gapFromArb != null && gapFromArb < 2 ? "#c89030" : "#555" },
         ].map((s, i) => (
-          <div key={i} style={{ padding: "16px 0", marginRight: 32 }}>
-            <div style={{ fontSize: 9, letterSpacing: 3, color: "#555", textTransform: "uppercase", marginBottom: 4 }}>{s.label}</div>
-            <div style={{ fontSize: 20, color: s.color, fontWeight: 300 }}>{s.value}</div>
+          <div key={i} style={{ padding: "12px 0", marginRight: 24 }}>
+            <div style={{ fontSize: 10, color: "#555", marginBottom: 3, fontWeight: 500 }}>{s.label}</div>
+            <div style={{ fontSize: 18, color: s.color, fontWeight: 400, fontFamily: MONO }}>{s.value}</div>
           </div>
         ))}
+        <div style={{ padding: "12px 0", marginRight: 24 }}>
+          <div style={{ fontSize: 10, color: "#555", marginBottom: 3, fontWeight: 500 }}>Stake</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ fontSize: 18, color: "#ccc", fontWeight: 400, fontFamily: MONO }}>$</span>
+            <input
+              type="number"
+              value={stakeInput}
+              onChange={e => setStakeInput(e.target.value)}
+              onBlur={commitStake}
+              onKeyDown={e => { if (e.key === "Enter") commitStake(); }}
+              style={{
+                width: 72, padding: "3px 6px", fontSize: 18, fontWeight: 400,
+                fontFamily: MONO, background: "transparent", border: "1px solid transparent",
+                borderRadius: 3, color: "#ccc", outline: "none", boxSizing: "border-box",
+              }}
+              onFocus={e => { e.target.style.borderColor = "#2a2a2a"; e.target.style.background = "#111"; }}
+              onBlurCapture={e => { e.target.style.borderColor = "transparent"; e.target.style.background = "transparent"; }}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Tabs */}
-      <div style={{ display: "flex", padding: "0 32px", borderBottom: "1px solid #1a1a1a" }}>
+      <div style={{ display: "flex", padding: "0 28px", borderBottom: "1px solid #1a1a1a" }}>
         {[
           { key: "arbs", label: `Opportunities${arbs.length > 0 ? ` (${arbs.length})` : ""}` },
           { key: "games", label: `All Games (${gameCount})` },
@@ -958,72 +1024,75 @@ function Dashboard({ config }) {
           { key: "calc", label: "Calculator" },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            style={{ padding: "14px 24px", background: "transparent", border: "none", borderBottom: tab === t.key ? "2px solid #4caf50" : "2px solid transparent", color: tab === t.key ? "#4caf50" : "#555", fontSize: 11, fontFamily: "inherit", cursor: "pointer", letterSpacing: 2, textTransform: "uppercase" }}>
+            style={{
+              padding: "12px 20px", background: "transparent", border: "none",
+              borderBottom: tab === t.key ? "2px solid #5a9e6f" : "2px solid transparent",
+              color: tab === t.key ? "#e0e0e0" : "#555",
+              fontSize: 12, fontFamily: FONT, cursor: "pointer", fontWeight: tab === t.key ? 500 : 400,
+            }}>
             {t.label}
           </button>
         ))}
       </div>
 
       {/* Content */}
-      <div style={{ padding: "24px 32px" }}>
-        <div style={{ padding: 12, background: "#111", border: "1px solid #1a1a1a", borderRadius: 2, marginBottom: 16, fontSize: 11, color: "#666" }}>
-          Sportsbook odds are cached daily (1 API call/day). Kalshi prices refresh on each load.
-          Kalshi taker fees and whole-contract sizing are included. Whole-number spread pushes are excluded so "true arbs" stay truly risk-free.
+      <div style={{ padding: "20px 28px" }}>
+        <div style={{ padding: "10px 14px", background: "#111", border: "1px solid #1a1a1a", borderRadius: 4, marginBottom: 14, fontSize: 12, color: "#555", lineHeight: 1.6 }}>
+          Sportsbook odds cached daily (1 API call/day). Kalshi prices refresh on each load.
+          Kalshi taker fees and whole-contract sizing included. Whole-number spread pushes excluded.
           {getCachedOdds() && (
-            <span style={{ color: "#555", marginLeft: 8 }}>
-              Odds cached: {new Date(getCachedOdds().ts).toLocaleString()}
+            <span style={{ marginLeft: 6 }}>
+              Cached: {new Date(getCachedOdds().ts).toLocaleString()}
             </span>
           )}
           {arbs.some(a => a.confidence === "low") && (
-            <span style={{ color: "#f44336", marginLeft: 8 }}>
-              Some results flagged low-confidence — see warnings on individual cards.
+            <span style={{ color: "#c04040", marginLeft: 6 }}>
+              Some results flagged low-confidence.
             </span>
           )}
         </div>
 
         {error && (
-          <div style={{ padding: 16, background: "#1a0a0a", border: "1px solid #4a1a1a", borderRadius: 2, color: "#f44336", fontSize: 12, marginBottom: 16 }}>
+          <div style={{ padding: 14, background: "#1a0f0f", border: "1px solid #3a1a1a", borderRadius: 4, color: "#c04040", fontSize: 12, marginBottom: 14 }}>
             Error: {error}
           </div>
         )}
         {kalshiError && (
-          <div style={{ padding: 16, background: "#1a1200", border: "1px solid #4a3a00", borderRadius: 2, color: "#ff9800", fontSize: 12, marginBottom: 16 }}>
+          <div style={{ padding: 14, background: "#1a1500", border: "1px solid #3a2a00", borderRadius: 4, color: "#c89030", fontSize: 12, marginBottom: 14 }}>
             Kalshi: {kalshiError} — cross-exchange arbs unavailable, showing book-vs-book only
           </div>
         )}
 
-        {/* ── Opportunities Tab ── */}
         {tab === "arbs" && (
           <>
             {bestImpDetail && arbs.length === 0 && !loading && (
-              <div style={{ padding: 16, background: "#111", border: "1px solid #1a1a1a", borderRadius: 2, marginBottom: 16 }}>
-                <div style={{ fontSize: 10, letterSpacing: 2, color: "#555", textTransform: "uppercase", marginBottom: 8 }}>Closest to Arbitrage</div>
-                <div style={{ fontSize: 13, color: "#ff9800" }}>
+              <div style={{ padding: 14, background: "#111", border: "1px solid #1a1a1a", borderRadius: 4, marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: "#666", marginBottom: 6, fontWeight: 500 }}>Closest to Arbitrage</div>
+                <div style={{ fontSize: 13, color: "#c89030" }}>
                   {bestImpDetail.game}: {bestImpDetail.sideA} ({bestImpDetail.bookA}) vs {bestImpDetail.sideB} ({bestImpDetail.bookB})
                 </div>
-                <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
-                  Implied sum: {bestImpDetail.impSum.toFixed(4)} — need below 1.0000 for arb ({((bestImpDetail.impSum - 1) * 100).toFixed(2)}% away)
+                <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+                  Implied sum: {bestImpDetail.impSum.toFixed(4)} — need below 1.0000 ({((bestImpDetail.impSum - 1) * 100).toFixed(2)}% away)
                 </div>
               </div>
             )}
 
             {arbs.length === 0 ? (
-              <div style={{ padding: 40, textAlign: "center" }}>
-                <div style={{ fontSize: 32, marginBottom: 16, opacity: 0.3 }}>⊘</div>
-                <div style={{ fontSize: 13, color: "#555", marginBottom: 8 }}>No arbitrage opportunities detected</div>
-                <div style={{ fontSize: 11, color: "#333" }}>True arbs are rare and close fast. Scanner refreshes every 2 min.</div>
+              <div style={{ padding: 48, textAlign: "center" }}>
+                <div style={{ fontSize: 14, color: "#555", marginBottom: 6 }}>No arbitrage opportunities detected</div>
+                <div style={{ fontSize: 12, color: "#333" }}>True arbs are rare and close fast. Scanner refreshes on each load.</div>
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {trueArbs.length > 0 && (() => {
                   const trueML = trueArbs.filter(a => a.marketType === "h2h");
                   const trueSP = trueArbs.filter(a => a.marketType === "spread");
                   return (
                     <>
-                      <div style={{ fontSize: 10, letterSpacing: 3, color: "#4caf50", textTransform: "uppercase", marginBottom: 4 }}>
-                        True Arbitrage ({trueArbs.length})
-                        {trueML.length > 0 && <span style={{ color: "#64b5f6", marginLeft: 12 }}>{trueML.length} moneyline</span>}
-                        {trueSP.length > 0 && <span style={{ color: "#ce93d8", marginLeft: 12 }}>{trueSP.length} spread</span>}
+                      <div style={{ fontSize: 11, color: "#5a9e6f", fontWeight: 500, marginBottom: 2, display: "flex", gap: 10, alignItems: "center" }}>
+                        <span>True Arbitrage ({trueArbs.length})</span>
+                        {trueML.length > 0 && <span style={{ color: "#6a9fd8" }}>{trueML.length} moneyline</span>}
+                        {trueSP.length > 0 && <span style={{ color: "#a07dba" }}>{trueSP.length} spread</span>}
                       </div>
                       {trueArbs.map((a, i) => <ArbCard key={`true-${i}`} a={a} />)}
                     </>
@@ -1035,10 +1104,10 @@ function Dashboard({ config }) {
                   const nearSP = nearArbs.filter(a => a.marketType === "spread");
                   return (
                     <>
-                      <div style={{ fontSize: 10, letterSpacing: 3, color: "#ff9800", textTransform: "uppercase", marginTop: 12, marginBottom: 4 }}>
-                        Near-Arbitrage — within 3% ({nearArbs.length})
-                        {nearML.length > 0 && <span style={{ color: "#64b5f6", marginLeft: 12 }}>{nearML.length} moneyline</span>}
-                        {nearSP.length > 0 && <span style={{ color: "#ce93d8", marginLeft: 12 }}>{nearSP.length} spread</span>}
+                      <div style={{ fontSize: 11, color: "#c89030", fontWeight: 500, marginTop: 10, marginBottom: 2, display: "flex", gap: 10, alignItems: "center" }}>
+                        <span>Near-Arbitrage, within 3% ({nearArbs.length})</span>
+                        {nearML.length > 0 && <span style={{ color: "#6a9fd8" }}>{nearML.length} moneyline</span>}
+                        {nearSP.length > 0 && <span style={{ color: "#a07dba" }}>{nearSP.length} spread</span>}
                       </div>
                       {nearArbs.map((a, i) => <ArbCard key={`near-${i}`} a={a} />)}
                     </>
@@ -1049,9 +1118,8 @@ function Dashboard({ config }) {
           </>
         )}
 
-        {/* ── All Games Tab ── */}
         {tab === "games" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {games.map((g, gi) => {
               const books = Object.entries(g.bookOdds);
               const bestHome = books.reduce((best, [, o]) => { const d = americanToDecimal(o.home); return d && d > best ? d : best; }, 0);
@@ -1060,22 +1128,21 @@ function Dashboard({ config }) {
               const spreadBooks = Object.entries(g.spreadOdds || {});
 
               return (
-                <div key={gi} style={{ background: "#111", border: "1px solid #1a1a1a", borderRadius: 2, overflow: "hidden" }}>
-                  <div style={{ padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #1a1a1a" }}>
-                    <div style={{ fontSize: 13, color: "#fff" }}>{g.away} <span style={{ color: "#333", margin: "0 8px" }}>@</span> {g.home}</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <div key={gi} style={{ background: "#111", border: "1px solid #1a1a1a", borderRadius: 4, overflow: "hidden" }}>
+                  <div style={{ padding: "12px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #1a1a1a" }}>
+                    <div style={{ fontSize: 13, color: "#e0e0e0" }}>{g.away} <span style={{ color: "#444", margin: "0 6px" }}>@</span> {g.home}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                       {crossImp != null && (
-                        <span style={{ fontSize: 10, color: crossImp < 1 ? "#4caf50" : crossImp < 1.02 ? "#ff9800" : "#555" }}>
-                          H2H best: {crossImp.toFixed(4)}
+                        <span style={{ fontSize: 11, color: crossImp < 1 ? "#5a9e6f" : crossImp < 1.02 ? "#c89030" : "#555", fontFamily: MONO }}>
+                          {crossImp.toFixed(4)}
                         </span>
                       )}
-                      <div style={{ fontSize: 10, color: "#555" }}>{g.commence ? new Date(g.commence).toLocaleString() : ""}</div>
+                      <div style={{ fontSize: 11, color: "#555" }}>{g.commence ? new Date(g.commence).toLocaleString() : ""}</div>
                     </div>
                   </div>
-                  {/* H2H */}
-                  <div style={{ padding: "8px 0" }}>
-                    <div style={{ padding: "4px 20px", fontSize: 9, letterSpacing: 2, color: "#4caf50", textTransform: "uppercase" }}>Moneyline</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "140px 90px 90px 90px 90px", padding: "4px 20px", fontSize: 9, letterSpacing: 2, color: "#444", textTransform: "uppercase" }}>
+                  <div style={{ padding: "6px 0" }}>
+                    <div style={{ padding: "3px 18px", fontSize: 10, color: "#5a9e6f", fontWeight: 500 }}>Moneyline</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "140px 90px 90px 90px 90px", padding: "3px 18px", fontSize: 10, color: "#444", fontWeight: 500 }}>
                       <span>Book</span>
                       <span style={{ textAlign: "right" }}>{g.home.split(" ").pop()}</span>
                       <span style={{ textAlign: "right" }}>{g.away.split(" ").pop()}</span>
@@ -1088,24 +1155,23 @@ function Dashboard({ config }) {
                       const isHomeBest = hDec && Math.abs(hDec - bestHome) < 0.001;
                       const isAwayBest = aDec && Math.abs(aDec - bestAway) < 0.001;
                       return (
-                        <div key={bi} style={{ display: "grid", gridTemplateColumns: "140px 90px 90px 90px 90px", padding: "4px 20px", fontSize: 12, borderTop: bi > 0 ? "1px solid #0a0a0a" : "none" }}>
+                        <div key={bi} style={{ display: "grid", gridTemplateColumns: "140px 90px 90px 90px 90px", padding: "3px 18px", fontSize: 12, borderTop: bi > 0 ? "1px solid #0e0e0e" : "none" }}>
                           <span style={{ color: "#888" }}>{name}</span>
-                          <span style={{ textAlign: "right", color: isHomeBest ? "#4caf50" : "#ccc", fontWeight: isHomeBest ? 700 : 400 }}>{formatAmerican(odds.home)}</span>
-                          <span style={{ textAlign: "right", color: isAwayBest ? "#4caf50" : "#ccc", fontWeight: isAwayBest ? 700 : 400 }}>{formatAmerican(odds.away)}</span>
-                          <span style={{ textAlign: "right", color: "#555" }}>{hDec?.toFixed(3) || "—"}</span>
-                          <span style={{ textAlign: "right", color: "#555" }}>{aDec?.toFixed(3) || "—"}</span>
+                          <span style={{ textAlign: "right", color: isHomeBest ? "#5a9e6f" : "#bbb", fontWeight: isHomeBest ? 600 : 400, fontFamily: MONO }}>{formatAmerican(odds.home)}</span>
+                          <span style={{ textAlign: "right", color: isAwayBest ? "#5a9e6f" : "#bbb", fontWeight: isAwayBest ? 600 : 400, fontFamily: MONO }}>{formatAmerican(odds.away)}</span>
+                          <span style={{ textAlign: "right", color: "#555", fontFamily: MONO }}>{hDec?.toFixed(3) || "—"}</span>
+                          <span style={{ textAlign: "right", color: "#555", fontFamily: MONO }}>{aDec?.toFixed(3) || "—"}</span>
                         </div>
                       );
                     })}
                   </div>
-                  {/* Spreads */}
                   {spreadBooks.length > 0 && (
-                    <div style={{ padding: "8px 0", borderTop: "1px solid #1a1a1a" }}>
-                      <div style={{ padding: "4px 20px", fontSize: 9, letterSpacing: 2, color: "#00bcd4", textTransform: "uppercase" }}>Spreads</div>
+                    <div style={{ padding: "6px 0", borderTop: "1px solid #1a1a1a" }}>
+                      <div style={{ padding: "3px 18px", fontSize: 10, color: "#5a8fae", fontWeight: 500 }}>Spreads</div>
                       {spreadBooks.slice(0, 4).map(([name, lines], si) => (
-                        <div key={si} style={{ display: "flex", padding: "3px 20px", fontSize: 11 }}>
+                        <div key={si} style={{ display: "flex", padding: "2px 18px", fontSize: 11 }}>
                           <span style={{ width: 140, color: "#888" }}>{name}</span>
-                          <span style={{ flex: 1, color: "#ccc" }}>
+                          <span style={{ flex: 1, color: "#bbb", fontFamily: MONO }}>
                             {lines.map(l => `${l.name.split(" ").pop()} ${l.point > 0 ? "+" : ""}${l.point} (${formatAmerican(l.price)})`).join("  |  ")}
                           </span>
                         </div>
@@ -1121,16 +1187,15 @@ function Dashboard({ config }) {
           </div>
         )}
 
-        {/* ── Kalshi Tab ── */}
         {tab === "kalshi" && (
           <div>
             {kalshiError && (
-              <div style={{ padding: 16, background: "#1a1200", border: "1px solid #4a3a00", borderRadius: 2, color: "#ff9800", fontSize: 12, marginBottom: 16 }}>{kalshiError}</div>
+              <div style={{ padding: 14, background: "#1a1500", border: "1px solid #3a2a00", borderRadius: 4, color: "#c89030", fontSize: 12, marginBottom: 14 }}>{kalshiError}</div>
             )}
             {kalshiMarkets.length === 0 && !loading ? (
               <div style={{ padding: 40, textAlign: "center", color: "#555", fontSize: 13 }}>No open Kalshi game markets found.</div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {(() => {
                   const byEvent = {};
                   for (const km of kalshiMarkets) {
@@ -1139,9 +1204,9 @@ function Dashboard({ config }) {
                     byEvent[key].markets.push(km);
                   }
                   return Object.entries(byEvent).map(([eventTicker, { title, markets }]) => (
-                    <div key={eventTicker} style={{ background: "#111", border: "1px solid #1a1a1a", borderRadius: 2, overflow: "hidden" }}>
-                      <div style={{ padding: "12px 20px", borderBottom: "1px solid #1a1a1a", fontSize: 13, color: "#fff" }}>{title}</div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 70px 70px 70px 80px", padding: "6px 20px", fontSize: 9, letterSpacing: 2, color: "#444", textTransform: "uppercase", borderBottom: "1px solid #0a0a0a" }}>
+                    <div key={eventTicker} style={{ background: "#111", border: "1px solid #1a1a1a", borderRadius: 4, overflow: "hidden" }}>
+                      <div style={{ padding: "10px 18px", borderBottom: "1px solid #1a1a1a", fontSize: 13, color: "#e0e0e0" }}>{title}</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 70px 70px 70px 80px", padding: "5px 18px", fontSize: 10, color: "#444", fontWeight: 500, borderBottom: "1px solid #0e0e0e" }}>
                         <span>Market</span>
                         <span style={{ textAlign: "right" }}>Yes Bid</span>
                         <span style={{ textAlign: "right" }}>Yes Ask</span>
@@ -1150,28 +1215,20 @@ function Dashboard({ config }) {
                         <span style={{ textAlign: "right" }}>Volume</span>
                       </div>
                       {markets.map((km, i) => {
-                        const yesDecRaw = kalshiCentsToDecimalRaw(km.yesAsk);
                         const yesDec = kalshiCentsToDecimal(km.yesAsk);
-                        const yesFee = km.yesAsk ? kalshiFeePerContract(km.yesAsk) : 0;
                         const isML = km.type === "moneyline";
                         return (
-                          <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 70px 70px 70px 70px 80px", padding: "8px 20px", fontSize: 12, borderTop: i > 0 ? "1px solid #0a0a0a" : "none" }}>
-                            <div style={{ color: "#ccc", display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ fontSize: 8, letterSpacing: 1, padding: "1px 5px",
-                                background: isML ? "#2196f310" : "#9c27b010",
-                                border: `1px solid ${isML ? "#2196f340" : "#9c27b040"}`,
-                                borderRadius: 2,
-                                color: isML ? "#64b5f6" : "#ce93d8",
-                                textTransform: "uppercase", flexShrink: 0
-                              }}>{isML ? "ML" : km.type === "spread" ? "SPR" : km.type}</span>
+                          <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 70px 70px 70px 70px 80px", padding: "7px 18px", fontSize: 12, borderTop: i > 0 ? "1px solid #0e0e0e" : "none" }}>
+                            <div style={{ color: "#bbb", display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={badge(isML ? "#6a9fd8" : "#a07dba")}>{isML ? "ML" : km.type === "spread" ? "SPR" : km.type}</span>
                               {km.title}
-                              {yesDec && <span style={{ fontSize: 10, color: "#555", marginLeft: 8 }}>({formatAmerican(decimalToAmerican(yesDec))} incl fee)</span>}
+                              {yesDec && <span style={{ fontSize: 11, color: "#555", marginLeft: 6, fontFamily: MONO }}>({formatAmerican(decimalToAmerican(yesDec))})</span>}
                             </div>
-                            <span style={{ textAlign: "right", color: "#888" }}>{km.yesBid || "—"}</span>
-                            <span style={{ textAlign: "right", color: "#4caf50" }}>{km.yesAsk || "—"}</span>
-                            <span style={{ textAlign: "right", color: "#888" }}>{km.noBid || "—"}</span>
-                            <span style={{ textAlign: "right", color: "#4caf50" }}>{km.noAsk || "—"}</span>
-                            <span style={{ textAlign: "right", color: "#555" }}>{km.volume?.toLocaleString()}</span>
+                            <span style={{ textAlign: "right", color: "#888", fontFamily: MONO }}>{km.yesBid || "—"}</span>
+                            <span style={{ textAlign: "right", color: "#5a9e6f", fontFamily: MONO }}>{km.yesAsk || "—"}</span>
+                            <span style={{ textAlign: "right", color: "#888", fontFamily: MONO }}>{km.noBid || "—"}</span>
+                            <span style={{ textAlign: "right", color: "#5a9e6f", fontFamily: MONO }}>{km.noAsk || "—"}</span>
+                            <span style={{ textAlign: "right", color: "#555", fontFamily: MONO }}>{km.volume?.toLocaleString()}</span>
                           </div>
                         );
                       })}
@@ -1183,17 +1240,15 @@ function Dashboard({ config }) {
           </div>
         )}
 
-        {/* ── Calculator Tab ── */}
-        {tab === "calc" && <BetCalculator stake={config.stake} />}
+        {tab === "calc" && <BetCalculator stake={stake} />}
       </div>
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;700&display=swap');
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         * { box-sizing: border-box; }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #0a0a0a; }
-        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
       `}</style>
     </div>
   );
@@ -1205,6 +1260,10 @@ function BetCalculator({ stake: defaultStake }) {
     { type: "sportsbook", value: "", label: "Leg B" },
   ]);
   const [stake, setStake] = useState(String(defaultStake || 100));
+
+  useEffect(() => {
+    setStake(String(defaultStake || 100));
+  }, [defaultStake]);
 
   function updateLeg(idx, field, val) {
     setLegs(prev => prev.map((l, i) => i === idx ? { ...l, [field]: val } : l));
@@ -1263,27 +1322,40 @@ function BetCalculator({ stake: defaultStake }) {
   const feeA = legs[0].type === "kalshi" && parseFloat(legs[0].value) ? kalshiFeePerContract(parseFloat(legs[0].value)) : 0;
   const feeB = legs[1].type === "kalshi" && parseFloat(legs[1].value) ? kalshiFeePerContract(parseFloat(legs[1].value)) : 0;
 
-  const inputStyle = { width: "100%", padding: "12px 14px", background: "#0a0a0a", border: "1px solid #333", borderRadius: 2, color: "#fff", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" };
-  const labelStyle = { display: "block", fontSize: 10, letterSpacing: 3, color: "#666", marginBottom: 6, textTransform: "uppercase" };
+  const inputStyle = {
+    width: "100%", padding: "10px 12px", background: "#0a0a0a",
+    border: "1px solid #2a2a2a", borderRadius: 4, color: "#e0e0e0",
+    fontSize: 13, fontFamily: FONT, outline: "none", boxSizing: "border-box",
+  };
+  const labelStyle = { display: "block", fontSize: 12, color: "#666", marginBottom: 5, fontWeight: 500 };
 
   return (
     <div style={{ maxWidth: 700 }}>
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 10, letterSpacing: 3, color: "#4caf50", textTransform: "uppercase", marginBottom: 8 }}>Manual Bet Calculator</div>
-        <div style={{ fontSize: 12, color: "#555" }}>Enter two opposing bets to check for arbitrage. When one side is Kalshi, the calculator uses exact whole-contract sizing and aggregate taker fees.</div>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 14, color: "#e0e0e0", fontWeight: 600, marginBottom: 6 }}>Bet Calculator</div>
+        <div style={{ fontSize: 12, color: "#666" }}>Enter two opposing bets to check for arbitrage. Kalshi legs use exact whole-contract sizing with aggregate taker fees.</div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 18 }}>
         {legs.map((leg, i) => (
-          <div key={i} style={{ padding: 20, background: "#111", border: "1px solid #1a1a1a", borderRadius: 2 }}>
-            <div style={{ fontSize: 11, letterSpacing: 3, color: i === 0 ? "#4caf50" : "#00bcd4", textTransform: "uppercase", marginBottom: 16 }}>{leg.label}</div>
+          <div key={i} style={{ padding: 16, background: "#111", border: "1px solid #1a1a1a", borderRadius: 4 }}>
+            <div style={{ fontSize: 12, color: i === 0 ? "#5a9e6f" : "#5a8fae", fontWeight: 600, marginBottom: 14 }}>{leg.label}</div>
 
-            <div style={{ marginBottom: 14 }}>
+            <div style={{ marginBottom: 12 }}>
               <label style={labelStyle}>Platform</label>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 6 }}>
                 {["kalshi", "sportsbook"].map(t => (
                   <button key={t} onClick={() => updateLeg(i, "type", t)}
-                    style={{ flex: 1, padding: "10px 0", background: leg.type === t ? (t === "kalshi" ? "#00bcd4" : "#4caf50") : "#0a0a0a", border: `1px solid ${leg.type === t ? (t === "kalshi" ? "#00bcd4" : "#4caf50") : "#333"}`, borderRadius: 2, color: leg.type === t ? "#000" : "#666", fontSize: 11, fontFamily: "inherit", cursor: "pointer", fontWeight: leg.type === t ? 700 : 400, letterSpacing: 1, textTransform: "uppercase" }}>
+                    style={{
+                      flex: 1, padding: "8px 0",
+                      background: leg.type === t ? (t === "kalshi" ? "#2a5a6e" : "#2a6e3f") : "#0a0a0a",
+                      border: `1px solid ${leg.type === t ? (t === "kalshi" ? "#2a5a6e" : "#2a6e3f") : "#2a2a2a"}`,
+                      borderRadius: 4,
+                      color: leg.type === t ? "#fff" : "#666",
+                      fontSize: 11, fontFamily: FONT, cursor: "pointer",
+                      fontWeight: leg.type === t ? 600 : 400,
+                      textTransform: "capitalize",
+                    }}>
                     {t}
                   </button>
                 ))}
@@ -1298,88 +1370,88 @@ function BetCalculator({ stake: defaultStake }) {
             </div>
 
             {leg.type === "kalshi" && parseFloat(leg.value) > 0 && parseFloat(leg.value) < 100 && (
-              <div style={{ marginTop: 10, fontSize: 10, color: "#555" }}>
-                Fee: ${kalshiFeePerContract(parseFloat(leg.value)).toFixed(2)}/contract
-                {" | "}Eff. cost: {(parseFloat(leg.value)/100 + kalshiFeePerContract(parseFloat(leg.value))).toFixed(4)}
-                {" | "}Raw: {kalshiCentsToDecimalRaw(parseFloat(leg.value))?.toFixed(3)} dec
-                {" | "}After fees: {kalshiCentsToDecimal(parseFloat(leg.value))?.toFixed(3)} dec
+              <div style={{ marginTop: 8, fontSize: 11, color: "#555", fontFamily: MONO }}>
+                Fee: ${kalshiFeePerContract(parseFloat(leg.value)).toFixed(2)}/ct
+                {" | "}Cost: {(parseFloat(leg.value)/100 + kalshiFeePerContract(parseFloat(leg.value))).toFixed(4)}
+                {" | "}Raw: {kalshiCentsToDecimalRaw(parseFloat(leg.value))?.toFixed(3)}
+                {" | "}Adj: {kalshiCentsToDecimal(parseFloat(leg.value))?.toFixed(3)}
               </div>
             )}
             {leg.type === "sportsbook" && parseFloat(leg.value) && (
-              <div style={{ marginTop: 10, fontSize: 10, color: "#555" }}>
-                Decimal: {americanToDecimal(parseFloat(leg.value))?.toFixed(3)}
-                {" | "}Implied: {(100 / americanToDecimal(parseFloat(leg.value))).toFixed(1)}%
+              <div style={{ marginTop: 8, fontSize: 11, color: "#555", fontFamily: MONO }}>
+                Dec: {americanToDecimal(parseFloat(leg.value))?.toFixed(3)}
+                {" | "}Impl: {(100 / americanToDecimal(parseFloat(leg.value))).toFixed(1)}%
               </div>
             )}
           </div>
         ))}
       </div>
 
-      <div style={{ marginBottom: 20 }}>
+      <div style={{ marginBottom: 18 }}>
         <label style={labelStyle}>Total Stake ($)</label>
         <input type="number" value={stake} onChange={e => setStake(e.target.value)} style={{ ...inputStyle, width: 160 }} />
       </div>
 
       {hasResult && (
-        <div style={{ padding: 24, background: "#111", border: `1px solid ${isArb ? "#2e7d32" : impSum < 1.03 ? "#4a3a00" : "#1a1a1a"}`, borderRadius: 2 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+        <div style={{ padding: 20, background: "#111", border: `1px solid ${isArb ? "#2a4a2a" : impSum < 1.03 ? "#3a2a00" : "#1a1a1a"}`, borderRadius: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
             <div>
-              <div style={{ fontSize: 10, letterSpacing: 3, color: isArb ? "#4caf50" : "#ff9800", textTransform: "uppercase", marginBottom: 6 }}>
+              <div style={{ fontSize: 12, color: isArb ? "#5a9e6f" : "#c89030", fontWeight: 600, marginBottom: 4 }}>
                 {isArb ? "Arbitrage Found" : "No Arbitrage"}
               </div>
-              <div style={{ fontSize: 13, color: "#ccc" }}>
-                Implied probability sum: <span style={{ color: isArb ? "#4caf50" : "#ff9800", fontWeight: 700 }}>{impSum.toFixed(6)}</span>
+              <div style={{ fontSize: 13, color: "#bbb" }}>
+                Implied sum: <span style={{ color: isArb ? "#5a9e6f" : "#c89030", fontWeight: 600, fontFamily: MONO }}>{impSum.toFixed(6)}</span>
                 {rawImpSum && Math.abs(rawImpSum - impSum) > 0.0001 && (
-                  <span style={{ color: "#555", marginLeft: 8 }}>(without fees: {rawImpSum.toFixed(6)})</span>
+                  <span style={{ color: "#555", marginLeft: 8, fontFamily: MONO }}>(pre-fee: {rawImpSum.toFixed(6)})</span>
                 )}
                 {unusedStake > 0.009 && (
-                  <span style={{ color: "#555", marginLeft: 8 }}>(cash left idle: ${unusedStake.toFixed(2)})</span>
+                  <span style={{ color: "#555", marginLeft: 8, fontFamily: MONO }}>(idle: ${unusedStake.toFixed(2)})</span>
                 )}
               </div>
             </div>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 28, color: isArb ? "#4caf50" : roi > -3 ? "#ff9800" : "#666", fontWeight: 300 }}>
+              <div style={{ fontSize: 24, color: isArb ? "#5a9e6f" : roi > -3 ? "#c89030" : "#555", fontWeight: 400, fontFamily: MONO }}>
                 {roi > 0 ? "+" : ""}{roi.toFixed(2)}%
               </div>
-              <div style={{ fontSize: 11, color: isArb ? "#4caf50" : "#666" }}>
-                {isArb ? `$${profit.toFixed(2)} guaranteed profit` : `${((impSum - 1) * 100).toFixed(2)}% from arb`}
+              <div style={{ fontSize: 12, color: isArb ? "#5a9e6f" : "#555" }}>
+                {isArb ? `$${profit.toFixed(2)} guaranteed` : `${((impSum - 1) * 100).toFixed(2)}% from arb`}
               </div>
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, fontSize: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, fontSize: 12 }}>
             {[
-              { label: "Bet on A", value: `$${betA.toFixed(2)}`, color: "#fff" },
-              { label: "Bet on B", value: `$${betB.toFixed(2)}`, color: "#fff" },
-              { label: "Payout if A", value: `$${payoutA.toFixed(2)}`, color: isArb ? "#4caf50" : "#ccc" },
-              { label: "Payout if B", value: `$${payoutB.toFixed(2)}`, color: isArb ? "#4caf50" : "#ccc" },
+              { label: "Bet on A", value: `$${betA.toFixed(2)}`, color: "#e0e0e0" },
+              { label: "Bet on B", value: `$${betB.toFixed(2)}`, color: "#e0e0e0" },
+              { label: "Payout if A", value: `$${payoutA.toFixed(2)}`, color: isArb ? "#5a9e6f" : "#bbb" },
+              { label: "Payout if B", value: `$${payoutB.toFixed(2)}`, color: isArb ? "#5a9e6f" : "#bbb" },
             ].map((item, i) => (
-              <div key={i} style={{ padding: 12, background: "#0a0a0a", borderRadius: 2, border: "1px solid #1a1a1a" }}>
-                <div style={{ fontSize: 9, letterSpacing: 2, color: "#555", textTransform: "uppercase", marginBottom: 6 }}>{item.label}</div>
-                <div style={{ color: item.color, fontWeight: 500 }}>{item.value}</div>
+              <div key={i} style={{ padding: 10, background: "#0a0a0a", borderRadius: 4, border: "1px solid #1a1a1a" }}>
+                <div style={{ fontSize: 10, color: "#555", marginBottom: 4, fontWeight: 500 }}>{item.label}</div>
+                <div style={{ color: item.color, fontWeight: 500, fontFamily: MONO }}>{item.value}</div>
               </div>
             ))}
           </div>
 
-          <div style={{ marginTop: 16, display: "flex", gap: 20, fontSize: 10, color: "#555" }}>
-            <span>Dec A: {displayDecA.toFixed(4)}{feeA > 0 ? ` (fee-adj)` : ""}</span>
-            <span>Dec B: {displayDecB.toFixed(4)}{feeB > 0 ? ` (fee-adj)` : ""}</span>
+          <div style={{ marginTop: 14, display: "flex", gap: 16, fontSize: 11, color: "#555", fontFamily: MONO, flexWrap: "wrap" }}>
+            <span>A: {displayDecA.toFixed(4)}{feeA > 0 ? ` (adj)` : ""}</span>
+            <span>B: {displayDecB.toFixed(4)}{feeB > 0 ? ` (adj)` : ""}</span>
             <span>Imp A: {(100 / displayDecA).toFixed(1)}%</span>
             <span>Imp B: {(100 / displayDecB).toFixed(1)}%</span>
             <span>Used: ${usedStake.toFixed(2)}</span>
-            {exactKalshiLeg?.mode === "single" && <span>Kalshi contracts: {exactKalshiLeg.position === "A" ? stakePlan?.kalshiContractsA : stakePlan?.kalshiContractsB}</span>}
-            {exactKalshiLeg?.mode === "double" && <span>Kalshi contracts: A {stakePlan?.kalshiContractsA} | B {stakePlan?.kalshiContractsB}</span>}
+            {exactKalshiLeg?.mode === "single" && <span>Contracts: {exactKalshiLeg.position === "A" ? stakePlan?.kalshiContractsA : stakePlan?.kalshiContractsB}</span>}
+            {exactKalshiLeg?.mode === "double" && <span>Contracts: A {stakePlan?.kalshiContractsA} | B {stakePlan?.kalshiContractsB}</span>}
           </div>
         </div>
       )}
 
       {!hasResult && (
-        <div style={{ padding: 32, background: "#111", border: "1px solid #1a1a1a", borderRadius: 2, textAlign: "center" }}>
+        <div style={{ padding: 28, background: "#111", border: "1px solid #1a1a1a", borderRadius: 4, textAlign: "center" }}>
           <div style={{ fontSize: 13, color: "#555" }}>
             {exactSizingUnavailable ? "Stake is too small to buy even one Kalshi contract and hedge it exactly" : "Enter valid odds for both legs to see results"}
           </div>
-          <div style={{ fontSize: 11, color: "#333", marginTop: 8 }}>
-            Kalshi: enter contract price in cents (1-99) | Sportsbook: enter American odds (e.g. -110, +150)
+          <div style={{ fontSize: 12, color: "#333", marginTop: 6 }}>
+            Kalshi: contract price in cents (1-99) | Sportsbook: American odds (e.g. -110, +150)
           </div>
         </div>
       )}
@@ -1395,103 +1467,83 @@ function ArbCard({ a }) {
   const conf = a.confidence || "high";
   const isLowConf = conf === "low";
   const isMedConf = conf === "medium";
-  const accent = isLowConf ? "#666" : isTrueArb ? (isKalshi ? "#00bcd4" : "#4caf50") : "#ff9800";
-  const borderColor = isLowConf ? "#4a1a1a"
-    : isTrueArb ? (a.roi > 1 ? (isKalshi ? "#004d5a" : "#2e7d32") : (isKalshi ? "#002a33" : "#1a3a1a"))
-    : "#3a2a00";
+  const accent = isLowConf ? "#666" : isTrueArb ? (isKalshi ? "#5a8fae" : "#5a9e6f") : "#c89030";
+  const borderColor = isLowConf ? "#2a1515"
+    : isTrueArb ? (isKalshi ? "#1a2a33" : "#1a2a1a")
+    : "#2a2000";
 
   const betTypeLabel = isMoneyline ? "Moneyline" : isSpread ? "Spread" : a.marketType;
 
   return (
-    <div style={{ padding: 20, background: "#111", border: `1px solid ${borderColor}`, borderRadius: 2, opacity: isLowConf ? 0.7 : 1 }}>
+    <div style={{ padding: 16, background: "#111", border: `1px solid ${borderColor}`, borderRadius: 4, opacity: isLowConf ? 0.7 : 1 }}>
       {isLowConf && (
-        <div style={{ padding: "8px 12px", background: "#2a0a0a", border: "1px solid #5a1a1a", borderRadius: 2, marginBottom: 12, fontSize: 11, color: "#f44336" }}>
-          Low confidence — likely stale/thin data. ROI &gt;5% is rare in efficient markets. Verify both sides manually before acting.
+        <div style={{ padding: "7px 10px", background: "#1a0f0f", border: "1px solid #3a1a1a", borderRadius: 3, marginBottom: 10, fontSize: 12, color: "#c04040" }}>
+          Low confidence -- likely stale/thin data. Verify both sides manually.
         </div>
       )}
       {isMedConf && (
-        <div style={{ padding: "8px 12px", background: "#2a1a00", border: "1px solid #5a3a00", borderRadius: 2, marginBottom: 12, fontSize: 11, color: "#ff9800" }}>
-          Verify lines — Kalshi volume is thin or ROI is unusually high. Confirm prices on both platforms before placing bets.
+        <div style={{ padding: "7px 10px", background: "#1a1500", border: "1px solid #3a2a00", borderRadius: 3, marginBottom: 10, fontSize: 12, color: "#c89030" }}>
+          Verify lines -- Kalshi volume is thin or ROI is unusually high.
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-            <div style={{ fontSize: 14, color: "#fff" }}>{a.game}</div>
-            {isMoneyline && (
-              <span style={{ fontSize: 9, letterSpacing: 2, padding: "2px 6px", background: "#2196f320", border: "1px solid #2196f360", borderRadius: 2, color: "#64b5f6", textTransform: "uppercase" }}>Moneyline</span>
-            )}
-            {isSpread && (
-              <span style={{ fontSize: 9, letterSpacing: 2, padding: "2px 6px", background: "#9c27b020", border: "1px solid #9c27b060", borderRadius: 2, color: "#ce93d8", textTransform: "uppercase" }}>Spread</span>
-            )}
-            {isKalshi && (
-              <span style={{ fontSize: 9, letterSpacing: 2, padding: "2px 6px", background: "#00bcd420", border: "1px solid #00bcd460", borderRadius: 2, color: "#00bcd4", textTransform: "uppercase" }}>Kalshi</span>
-            )}
-            {!isTrueArb && (
-              <span style={{ fontSize: 9, letterSpacing: 2, padding: "2px 6px", background: "#ff980020", border: "1px solid #ff980060", borderRadius: 2, color: "#ff9800", textTransform: "uppercase" }}>Near-Arb</span>
-            )}
-            <span style={{ fontSize: 9, letterSpacing: 2, padding: "2px 6px",
-              background: conf === "high" ? "#4caf5020" : conf === "medium" ? "#ff980020" : "#f4433620",
-              border: `1px solid ${conf === "high" ? "#4caf5060" : conf === "medium" ? "#ff980060" : "#f4433660"}`,
-              borderRadius: 2,
-              color: conf === "high" ? "#4caf50" : conf === "medium" ? "#ff9800" : "#f44336",
-              textTransform: "uppercase"
-            }}>{conf}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 14, color: "#e0e0e0", fontWeight: 500 }}>{a.game}</div>
+            {isMoneyline && <span style={badge("#6a9fd8")}>ML</span>}
+            {isSpread && <span style={badge("#a07dba")}>Spread</span>}
+            {isKalshi && <span style={badge("#5a8fae")}>Kalshi</span>}
+            {!isTrueArb && <span style={badge("#c89030")}>Near</span>}
+            <span style={badge(conf === "high" ? "#5a9e6f" : conf === "medium" ? "#c89030" : "#c04040")}>{conf}</span>
           </div>
-          <div style={{ fontSize: 10, color: "#555" }}>{a.commence ? new Date(a.commence).toLocaleString() : ""}</div>
+          <div style={{ fontSize: 11, color: "#555" }}>{a.commence ? new Date(a.commence).toLocaleString() : ""}</div>
           {isKalshi && (
-            <div style={{ fontSize: 10, color: "#444", marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: "#444", marginTop: 2, fontFamily: MONO }}>
               {a.kalshiTicker}
-              {a.kalshiVolume != null && <span style={{ marginLeft: 8 }}>Vol: {a.kalshiVolume.toLocaleString()}</span>}
-              {a.kalshiBaSpread != null && <span style={{ marginLeft: 8 }}>Spread: {a.kalshiBaSpread}c</span>}
+              {a.kalshiVolume != null && <span style={{ marginLeft: 8 }}>vol {a.kalshiVolume.toLocaleString()}</span>}
+              {a.kalshiBaSpread != null && <span style={{ marginLeft: 8 }}>ba {a.kalshiBaSpread}c</span>}
             </div>
           )}
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 22, color: accent, fontWeight: 300 }}>
+          <div style={{ fontSize: 20, color: accent, fontWeight: 400, fontFamily: MONO }}>
             {isTrueArb ? "+" : ""}{a.roi.toFixed(2)}%
           </div>
-          <div style={{ fontSize: 11, color: accent }}>
+          <div style={{ fontSize: 12, color: accent }}>
             {isTrueArb ? `$${a.profit.toFixed(2)} profit` : `${((a.impSum - 1) * 100).toFixed(2)}% from arb`}
           </div>
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         {[
-          { side: a.sideA, book: a.bookA, american: a.americanA, decimal: a.decimalA, bet: a.betA, label: "LEG A", contracts: a.kalshiContractsA, fee: a.kalshiFeeA },
-          { side: a.sideB, book: a.bookB, american: a.americanB, decimal: a.decimalB, bet: a.betB, label: "LEG B", contracts: a.kalshiContractsB, fee: a.kalshiFeeB },
+          { side: a.sideA, book: a.bookA, american: a.americanA, decimal: a.decimalA, bet: a.betA, label: "Leg A", contracts: a.kalshiContractsA, fee: a.kalshiFeeA },
+          { side: a.sideB, book: a.bookB, american: a.americanB, decimal: a.decimalB, bet: a.betB, label: "Leg B", contracts: a.kalshiContractsB, fee: a.kalshiFeeB },
         ].map((leg, li) => {
           const legIsKalshi = leg.book === "Kalshi";
           const impliedProb = leg.decimal ? (100 / leg.decimal) : null;
           return (
-            <div key={li} style={{ padding: 14, background: "#0a0a0a", borderRadius: 2, border: `1px solid ${legIsKalshi ? "#00bcd420" : "#1a1a1a"}` }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ fontSize: 9, letterSpacing: 3, color: legIsKalshi ? "#00bcd4" : "#555", textTransform: "uppercase" }}>{leg.label}</div>
-                <div style={{ fontSize: 9, letterSpacing: 2, padding: "2px 6px",
-                  background: isMoneyline ? "#2196f310" : "#9c27b010",
-                  border: `1px solid ${isMoneyline ? "#2196f340" : "#9c27b040"}`,
-                  borderRadius: 2,
-                  color: isMoneyline ? "#64b5f6" : "#ce93d8",
-                  textTransform: "uppercase"
-                }}>{betTypeLabel}</div>
+            <div key={li} style={{ padding: 12, background: "#0a0a0a", borderRadius: 4, border: `1px solid ${legIsKalshi ? "#1a2a33" : "#1a1a1a"}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <div style={{ fontSize: 11, color: legIsKalshi ? "#5a8fae" : "#555", fontWeight: 500 }}>{leg.label}</div>
+                <span style={badge(isMoneyline ? "#6a9fd8" : "#a07dba")}>{betTypeLabel}</span>
               </div>
-              <div style={{ fontSize: 13, color: "#fff", marginBottom: 6 }}>{leg.side}</div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, marginBottom: 4 }}>
-                <span style={{ color: legIsKalshi ? "#00bcd4" : "#888" }}>{leg.book}</span>
-                <span style={{ fontSize: 16, color: accent, fontWeight: 600 }}>{formatAmerican(leg.american)}</span>
+              <div style={{ fontSize: 13, color: "#e0e0e0", marginBottom: 5 }}>{leg.side}</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, marginBottom: 3 }}>
+                <span style={{ color: legIsKalshi ? "#5a8fae" : "#888" }}>{leg.book}</span>
+                <span style={{ fontSize: 15, color: accent, fontWeight: 600, fontFamily: MONO }}>{formatAmerican(leg.american)}</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#555" }}>
-                <span>Decimal: {leg.decimal?.toFixed(3) ?? "—"}</span>
-                <span>Implied: {impliedProb != null ? `${impliedProb.toFixed(1)}%` : "—"}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#555", fontFamily: MONO }}>
+                <span>{leg.decimal?.toFixed(3) ?? "—"} dec</span>
+                <span>{impliedProb != null ? `${impliedProb.toFixed(1)}%` : "—"}</span>
               </div>
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #1a1a1a", display: "flex", justifyContent: "space-between", fontSize: 11 }}>
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #1a1a1a", display: "flex", justifyContent: "space-between", fontSize: 12 }}>
                 <span style={{ color: "#555" }}>{isTrueArb ? "Bet" : "Would bet"}</span>
-                <span style={{ color: "#fff", fontWeight: 600 }}>${leg.bet.toFixed(2)}</span>
+                <span style={{ color: "#e0e0e0", fontWeight: 600, fontFamily: MONO }}>${leg.bet.toFixed(2)}</span>
               </div>
               {legIsKalshi && leg.contracts != null && (
-                <div style={{ marginTop: 6, fontSize: 10, color: "#555" }}>
+                <div style={{ marginTop: 5, fontSize: 11, color: "#555", fontFamily: MONO }}>
                   {leg.contracts} contracts
                   {leg.fee != null && ` | $${leg.fee.toFixed(2)} fee`}
                 </div>
@@ -1501,12 +1553,12 @@ function ArbCard({ a }) {
         })}
       </div>
 
-      <div style={{ marginTop: 12, display: "flex", gap: 24, fontSize: 10, color: "#555", flexWrap: "wrap" }}>
-        <span>Bet type: {betTypeLabel}</span>
-        <span>Implied sum: {a.impSum.toFixed(4)}</span>
-        <span>Used stake: ${a.usedStake.toFixed(2)}</span>
-        {a.unusedStake > 0.009 && <span>Cash left: ${a.unusedStake.toFixed(2)}</span>}
-        <span>Fees included: {isKalshi ? "yes" : "n/a"}</span>
+      <div style={{ marginTop: 10, display: "flex", gap: 16, fontSize: 11, color: "#444", fontFamily: MONO, flexWrap: "wrap" }}>
+        <span>{betTypeLabel}</span>
+        <span>imp {a.impSum.toFixed(4)}</span>
+        <span>used ${a.usedStake.toFixed(2)}</span>
+        {a.unusedStake > 0.009 && <span>idle ${a.unusedStake.toFixed(2)}</span>}
+        {isKalshi && <span>fees incl</span>}
       </div>
     </div>
   );
@@ -1540,42 +1592,41 @@ function LoginScreen({ onLogin }) {
     }, 600);
   };
 
+  const inputStyle = {
+    width: "100%", padding: "10px 12px", fontSize: 14,
+    background: "#0a0a0a", border: "1px solid #2a2a2a",
+    borderRadius: 4, color: "#e0e0e0", outline: "none",
+    boxSizing: "border-box", fontFamily: FONT,
+  };
+
   return (
     <div style={{
       minHeight: "100vh",
-      background: "linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%)",
+      background: "#0a0a0a",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      fontFamily: "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif",
+      fontFamily: FONT,
     }}>
       <div style={{
-        width: 380,
-        background: "rgba(20, 20, 30, 0.95)",
-        borderRadius: 16,
-        border: "1px solid rgba(255,255,255,0.08)",
-        boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
-        padding: "48px 36px 40px",
+        width: 360,
+        background: "#111",
+        borderRadius: 6,
+        border: "1px solid #1e1e1e",
+        padding: "40px 32px 36px",
       }}>
-        <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{
-            width: 56, height: 56, borderRadius: 14,
-            background: "linear-gradient(135deg, #00e676, #00bcd4)",
-            display: "inline-flex", alignItems: "center", justifyContent: "center",
-            fontSize: 28, marginBottom: 16,
-          }}>⚡</div>
+        <div style={{ marginBottom: 28 }}>
           <h1 style={{
-            margin: 0, fontSize: 22, fontWeight: 700, color: "#fff",
-            letterSpacing: "-0.02em",
+            margin: 0, fontSize: 20, fontWeight: 600, color: "#e0e0e0",
           }}>Arbitrage Scanner</h1>
-          <p style={{ margin: "8px 0 0", fontSize: 13, color: "#666" }}>
+          <p style={{ margin: "6px 0 0", fontSize: 13, color: "#666" }}>
             Sign in to access the dashboard
           </p>
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: 18 }}>
-            <label style={{ display: "block", fontSize: 12, color: "#888", marginBottom: 6, fontWeight: 500 }}>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 12, color: "#888", marginBottom: 5, fontWeight: 500 }}>
               Username
             </label>
             <input
@@ -1584,19 +1635,11 @@ function LoginScreen({ onLogin }) {
               onChange={(e) => setUsername(e.target.value)}
               placeholder="Enter username"
               autoComplete="username"
-              style={{
-                width: "100%", padding: "12px 14px", fontSize: 14,
-                background: "#0d0d14", border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: 10, color: "#fff", outline: "none",
-                boxSizing: "border-box",
-                transition: "border-color 0.2s",
-              }}
-              onFocus={(e) => e.target.style.borderColor = "#00e676"}
-              onBlur={(e) => e.target.style.borderColor = "rgba(255,255,255,0.1)"}
+              style={inputStyle}
             />
           </div>
-          <div style={{ marginBottom: 24 }}>
-            <label style={{ display: "block", fontSize: 12, color: "#888", marginBottom: 6, fontWeight: 500 }}>
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: "block", fontSize: 12, color: "#888", marginBottom: 5, fontWeight: 500 }}>
               Password
             </label>
             <input
@@ -1605,23 +1648,15 @@ function LoginScreen({ onLogin }) {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter password"
               autoComplete="current-password"
-              style={{
-                width: "100%", padding: "12px 14px", fontSize: 14,
-                background: "#0d0d14", border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: 10, color: "#fff", outline: "none",
-                boxSizing: "border-box",
-                transition: "border-color 0.2s",
-              }}
-              onFocus={(e) => e.target.style.borderColor = "#00e676"}
-              onBlur={(e) => e.target.style.borderColor = "rgba(255,255,255,0.1)"}
+              style={inputStyle}
             />
           </div>
 
           {error && (
             <div style={{
-              background: "rgba(244,67,54,0.12)", border: "1px solid rgba(244,67,54,0.3)",
-              borderRadius: 8, padding: "10px 14px", marginBottom: 18,
-              fontSize: 13, color: "#ef5350", textAlign: "center",
+              background: "#1a0f0f", border: "1px solid #3a1a1a",
+              borderRadius: 4, padding: "8px 12px", marginBottom: 16,
+              fontSize: 13, color: "#c04040", textAlign: "center",
             }}>{error}</div>
           )}
 
@@ -1629,14 +1664,11 @@ function LoginScreen({ onLogin }) {
             type="submit"
             disabled={loading || !username || !password}
             style={{
-              width: "100%", padding: "13px 0", fontSize: 15, fontWeight: 600,
-              background: loading || !username || !password
-                ? "rgba(0,230,118,0.3)"
-                : "linear-gradient(135deg, #00e676, #00c853)",
-              color: "#000", border: "none", borderRadius: 10,
+              width: "100%", padding: "11px 0", fontSize: 14, fontWeight: 600,
+              background: loading || !username || !password ? "#1a1a1a" : "#2a6e3f",
+              color: loading || !username || !password ? "#555" : "#fff",
+              border: "none", borderRadius: 4, fontFamily: FONT,
               cursor: loading || !username || !password ? "not-allowed" : "pointer",
-              transition: "opacity 0.2s",
-              letterSpacing: "0.01em",
             }}
           >
             {loading ? "Signing in..." : "Sign In"}

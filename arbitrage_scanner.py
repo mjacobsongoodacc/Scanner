@@ -20,7 +20,7 @@ from openpyxl.utils import get_column_letter
 # ─── API CONFIG ───────────────────────────────────────────────────────────────
 
 KALSHI_BASE = "https://api.elections.kalshi.com/trade-api/v2"
-KALSHI_API_KEY = "1abdab8d-2e42-4705-b12f-8a7be9e72d43"
+KALSHI_API_KEY = "74a43176-8f20-4502-ae7b-160f9673132f"
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 
 SPORT_MAP = {

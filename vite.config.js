@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import https from "https";
 
-const KALSHI_API_KEY = "1abdab8d-2e42-4705-b12f-8a7be9e72d43";
+const KALSHI_API_KEY = "74a43176-8f20-4502-ae7b-160f9673132f";
 
 function kalshiProxyPlugin() {
   return {
@@ -10,7 +10,7 @@ function kalshiProxyPlugin() {
     configureServer(server) {
       server.middlewares.use("/kalshi-api", (req, res) => {
         const options = {
-          hostname: "api.elections.kalshi.com",
+          hostname: "trading-api.kalshi.com",
           path: req.url,
           method: req.method,
           headers: {
