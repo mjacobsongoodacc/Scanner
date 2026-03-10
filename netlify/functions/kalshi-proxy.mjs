@@ -21,19 +21,24 @@ function signRequest(timestamp, method, path, privateKey) {
     .toString("base64");
 }
 
-function fetchKalshi(pathWithQuery, method = "GET") {
+function fetchKalshi(pathWithQuery, method = "GET", useAuth = true) {
   return new Promise((resolve, reject) => {
     const path = pathWithQuery.startsWith("/") ? pathWithQuery : `/${pathWithQuery}`;
-    const hasAuth = KALSHI_PRIVATE_KEY && KALSHI_API_KEY_ID;
+    const hasAuth = useAuth && KALSHI_PRIVATE_KEY && KALSHI_API_KEY_ID;
 
     const headers = { Accept: "application/json" };
     if (hasAuth) {
-      const pathForSigning = path.split("?")[0];
-      const timestamp = String(Date.now());
-      const signature = signRequest(timestamp, method, pathForSigning, KALSHI_PRIVATE_KEY);
-      headers["KALSHI-ACCESS-KEY"] = KALSHI_API_KEY_ID;
-      headers["KALSHI-ACCESS-TIMESTAMP"] = timestamp;
-      headers["KALSHI-ACCESS-SIGNATURE"] = signature;
+      try {
+        const pathForSigning = path.split("?")[0];
+        const timestamp = String(Date.now());
+        const signature = signRequest(timestamp, method, pathForSigning, KALSHI_PRIVATE_KEY);
+        headers["KALSHI-ACCESS-KEY"] = KALSHI_API_KEY_ID;
+        headers["KALSHI-ACCESS-TIMESTAMP"] = timestamp;
+        headers["KALSHI-ACCESS-SIGNATURE"] = signature;
+      } catch (e) {
+        reject(e);
+        return;
+      }
     }
 
     const options = {
@@ -56,6 +61,7 @@ function fetchKalshi(pathWithQuery, method = "GET") {
 }
 
 export default async (req, context) => {
+  let fullPath;
   try {
     const url = new URL(req.url);
     let pathWithQuery;
@@ -70,24 +76,36 @@ export default async (req, context) => {
       const query = url.searchParams.toString();
       pathWithQuery = query ? `${basePath}?${query}` : basePath;
     }
-    const fullPath = pathWithQuery.startsWith("/") ? pathWithQuery : `/${pathWithQuery}`;
-
-    const { status, body, contentType } = await fetchKalshi(fullPath, req.method || "GET");
-
-    return new Response(body, {
-      status,
-      headers: {
-        "Content-Type": contentType || "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
-    });
-  } catch (err) {
-    return new Response(JSON.stringify({ error: `Kalshi proxy: ${err.message}` }), {
-      status: 502,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
-    });
+    fullPath = pathWithQuery.startsWith("/") ? pathWithQuery : `/${pathWithQuery}`;
+  } catch (parseErr) {
+    return new Response(
+      JSON.stringify({ error: `Invalid request URL: ${parseErr.message}` }),
+      { status: 400, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
+    );
   }
+
+  let result;
+  try {
+    result = await fetchKalshi(fullPath, req.method || "GET", true);
+  } catch (authErr) {
+    try {
+      result = await fetchKalshi(fullPath, req.method || "GET", false);
+    } catch (fallbackErr) {
+      return new Response(
+        JSON.stringify({
+          error: `Kalshi proxy failed: ${authErr.message}`,
+          hint: "Check KALSHI_PRIVATE_KEY and KALSHI_API_KEY_ID in Netlify env vars (scope: Functions).",
+        }),
+        { status: 502, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
+      );
+    }
+  }
+
+  return new Response(result.body, {
+    status: result.status,
+    headers: {
+      "Content-Type": result.contentType || "application/json",
+      "Access-Control-Allow-Origin": "*",
+    },
+  });
 };
