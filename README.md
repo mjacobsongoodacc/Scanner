@@ -1,6 +1,6 @@
 # Arbitrage Scanner
 
-NBA and NCAAB arbitrage scanner that finds profitable betting opportunities across sportsbooks and Kalshi event contracts.
+Multi-sport arbitrage scanner for MLB, NBA, NCAA Basketball, and NFL. Finds profitable betting opportunities across sportsbooks and Kalshi event contracts.
 
 ## Features
 
@@ -10,6 +10,7 @@ NBA and NCAAB arbitrage scanner that finds profitable betting opportunities acro
 - **Confidence scoring** — rates opportunities by Kalshi volume and bid-ask spread
 - **Built-in calculator** — manual two-leg arbitrage calculator with Kalshi fee modeling
 - **Login-protected dashboard** — authentication gate before accessing the scanner
+- **Multi-sport support** — Baseball (MLB), Basketball (NBA), NCAA Basketball, NFL via dropdown selector
 
 ## Tech Stack
 
@@ -36,6 +37,32 @@ npm run dev
 
 The app starts at `http://localhost:5173`.
 
+### The Odds API (required for sportsbook odds)
+
+Sportsbook odds come from [The Odds API](https://the-odds-api.com/). Get a free key (500 requests/month):
+
+1. Sign up at [the-odds-api.com](https://the-odds-api.com/)
+2. Add to `.env`:
+   ```
+   VITE_ODDS_API_KEY=your-odds-api-key
+   ```
+
+**Important:** This is different from the Kalshi API key. Do not use your Kalshi key for the Odds API.
+
+### Kalshi API (optional)
+
+The Kalshi events endpoint is **public** — no API keys needed for market data. To use authenticated endpoints or ensure best availability:
+
+1. Create an API key at [Kalshi](https://kalshi.com/) → Account & Security → API Keys.
+2. Add to `.env`:
+   ```
+   KALSHI_API_KEY_ID=your-key-id
+   KALSHI_PRIVATE_KEY_PATH=./kalshi.key
+   ```
+3. Place your downloaded private key at `./kalshi.key`.
+
+Override the API host with `KALSHI_API_HOST` (default: `api.elections.kalshi.com`).
+
 ### Build for Production
 
 ```bash
@@ -55,12 +82,17 @@ Outputs an Excel file with all detected arbitrage opportunities.
 ## Project Structure
 
 ```
-├── index.html                 # HTML shell
+├── index.html
 ├── src/
-│   ├── main.jsx               # React entry point
-│   └── ArbitrageScanner.jsx   # All UI: login, setup, dashboard, calculator
-├── arbitrage_scanner.py       # Standalone Python CLI scanner
-├── vite.config.js             # Vite config with Kalshi proxy middleware
+│   ├── main.jsx
+│   ├── App.jsx
+│   ├── styles.js
+│   ├── arb/                   # Arb detection, odds utils, Kalshi fetch
+│   ├── arbValidation/         # Execution validation, confidence scoring
+│   ├── paperTrading/          # Paper trading store & dashboard
+│   └── components/            # LoginScreen, SetupScreen, Dashboard, ArbCard, etc.
+├── arbitrage_scanner.py
+├── vite.config.js
 └── package.json
 ```
 
