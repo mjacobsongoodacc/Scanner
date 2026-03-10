@@ -95,7 +95,7 @@ export default function Dashboard({ config, onConfigChange }) {
       } else {
         const oddsApiKey = sportCfg.oddsApiKey;
         if (!config.apiKey?.trim()) {
-          throw new Error("Odds API key missing. Add VITE_ODDS_API_KEY to .env (get free key at the-odds-api.com)");
+          throw new Error("Odds API key missing. Add VITE_ODDS_API_KEY to env (local: .env; Netlify: Site settings) and redeploy.");
         }
         const oddsUrl = `${ODDS_API_BASE}/sports/${oddsApiKey}/odds?apiKey=${config.apiKey}&regions=us&markets=h2h,spreads&oddsFormat=american`;
         const oddsResp = await fetch(oddsUrl);

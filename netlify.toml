@@ -1,0 +1,16 @@
+[build]
+  publish = "dist"
+  command = "npm run build"
+
+# Kalshi proxy MUST come before SPA fallback (order matters)
+[[redirects]]
+  from = "/kalshi-api/*"
+  to = "/.netlify/functions/kalshi-proxy?path=/:splat"
+  status = 200
+  force = true
+
+# SPA fallback - must be last
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

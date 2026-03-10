@@ -63,6 +63,21 @@ The Kalshi events endpoint is **public** — no API keys needed for market data.
 
 Override the API host with `KALSHI_API_HOST` (default: `api.elections.kalshi.com`).
 
+### Deploy to Netlify
+
+**Environment variables** (Netlify → Site settings → Environment variables):
+
+| Variable | Required | Scope | Notes |
+|----------|----------|-------|-------|
+| `VITE_ODDS_API_KEY` | Yes | **Builds** (or All) | Sportsbook odds. Must be set before deploy; triggers a new build. |
+| `KALSHI_API_KEY_ID` | For Kalshi | Functions (or All) | Your Kalshi API key ID |
+| `KALSHI_PRIVATE_KEY` | For Kalshi | Functions (or All) | **Full PEM content** of your private key — not `KALSHI_PRIVATE_KEY_PATH` |
+
+**Important:**
+- `KALSHI_PRIVATE_KEY_PATH` does **not** work on Netlify (no filesystem). Use `KALSHI_PRIVATE_KEY` and paste the entire key contents.
+- `VITE_ODDS_API_KEY` is embedded at **build** time. After adding or changing it: **Deploys → Trigger deploy → Deploy site** (a new build must run).
+- Ensure env vars have scope **Builds** (or All) so they're available during the build.
+
 ### Build for Production
 
 ```bash
@@ -82,6 +97,8 @@ Outputs an Excel file with all detected arbitrage opportunities.
 ## Project Structure
 
 ```
+├── netlify/functions/
+│   └── kalshi-proxy.mjs      # Kalshi API proxy for Netlify deployments
 ├── index.html
 ├── src/
 │   ├── main.jsx
