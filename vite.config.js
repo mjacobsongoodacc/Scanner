@@ -34,9 +34,19 @@ function kalshiProxyPlugin() {
     name: "kalshi-proxy",
     configureServer(server) {
       server.middlewares.use("/kalshi-api", (req, res) => {
-        // req.url may be full path (/kalshi-api/...) or remainder (/trade-api/...) depending on Connect
-        let upstreamPath = (req.url || "/").replace(/^\/kalshi-api/, "").trim() || "/trade-api/v2/";
-        if (!upstreamPath.startsWith("/")) upstreamPath = `/${upstreamPath}`;
+        let upstreamPath;
+        const u = (req.url || "").split("?");
+        const pathPart = u[0] || "";
+        const queryPart = u[1] || "";
+        const params = new URLSearchParams(queryPart);
+        const pathParam = params.get("path");
+        if (pathParam) {
+          upstreamPath = pathParam.startsWith("/") ? pathParam : `/${pathParam}`;
+        } else {
+          upstreamPath = pathPart.replace(/^\/kalshi-api/, "").trim() || "/trade-api/v2/";
+          if (queryPart) upstreamPath += `?${queryPart}`;
+          if (!upstreamPath.startsWith("/")) upstreamPath = `/${upstreamPath}`;
+        }
 
         const hasAuth = privateKey && KALSHI_API_KEY_ID;
         const isGetEvents = req.method === "GET" && upstreamPath.includes("/events");

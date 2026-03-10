@@ -17,7 +17,8 @@ export async function fetchKalshiGameMarkets(sport) {
       });
       if (cursor) params.set("cursor", cursor);
 
-      const url = `/kalshi-api/trade-api/v2/events?${params}`;
+      const kalshiPath = `/trade-api/v2/events?${params}`;
+      const url = `/kalshi-api?path=${encodeURIComponent(kalshiPath)}`;
       const resp = await fetch(url, { headers: { Accept: "application/json" } });
       if (!resp.ok) throw new Error(`Kalshi: ${resp.status} ${resp.statusText}`);
       const data = await resp.json();

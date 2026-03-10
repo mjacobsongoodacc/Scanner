@@ -2,7 +2,13 @@
   publish = "dist"
   command = "npm run build"
 
-# Kalshi proxy MUST come before SPA fallback (order matters)
+# Kalshi proxy — path+query encoded in ?path= param (order matters)
+[[redirects]]
+  from = "/kalshi-api"
+  to = "/.netlify/functions/kalshi-proxy"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/kalshi-api/*"
   to = "/.netlify/functions/kalshi-proxy?path=/:splat"
