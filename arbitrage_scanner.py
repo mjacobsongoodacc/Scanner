@@ -20,7 +20,6 @@ from openpyxl.utils import get_column_letter
 # ─── API CONFIG ───────────────────────────────────────────────────────────────
 
 KALSHI_BASE = "https://api.elections.kalshi.com/trade-api/v2"
-KALSHI_API_KEY = "5c07fe58-164b-4521-9e4a-ac3889543f01"
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 
 SPORT_MAP = {
@@ -749,6 +748,10 @@ def write_excel(opportunities, all_games, stake, filename="arb_scan_results.xlsx
     ws["A1"].font = Font(name="Arial", bold=True, size=14)
     ws["A2"] = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  |  Stake: ${stake}"
     ws["A2"].font = Font(name="Arial", size=10, italic=True)
+    disclaimer = "Disclaimer: Kalshi cross-exchange arbs include taker fees that can turn apparent profits into losses. Verify fees and execution before placing real bets."
+    ws["A3"] = disclaimer
+    ws["A3"].font = Font(name="Arial", size=10, italic=True, color="C65911")
+    ws.merge_cells("A3:X3")
 
     headers = [
         "Game", "Bet Type", "Tip-Off", "Side A", "Book A", "American A", "Decimal A", "Implied Prob A",
@@ -758,14 +761,14 @@ def write_excel(opportunities, all_games, stake, filename="arb_scan_results.xlsx
     ]
 
     for col, h in enumerate(headers, 1):
-        cell = ws.cell(row=4, column=col, value=h)
+        cell = ws.cell(row=5, column=col, value=h)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center", wrap_text=True)
         cell.border = thin_border
 
     for i, opp in enumerate(opportunities):
-        row = 5 + i
+        row = 6 + i
         bet_type = "Moneyline" if opp["market_type"] == "h2h" else "Spread" if opp["market_type"] == "spread" else opp["market_type"]
         imp_prob_a = round(100 / opp["side_a_odds_dec"], 1) if opp["side_a_odds_dec"] else ""
         imp_prob_b = round(100 / opp["side_b_odds_dec"], 1) if opp["side_b_odds_dec"] else ""
@@ -796,8 +799,8 @@ def write_excel(opportunities, all_games, stake, filename="arb_scan_results.xlsx
         ws.column_dimensions[get_column_letter(i)].width = w
 
     if not opportunities:
-        ws.cell(row=5, column=1, value="No arbitrage opportunities found at this time.")
-        ws.cell(row=5, column=1).font = Font(name="Arial", italic=True, size=11)
+        ws.cell(row=6, column=1, value="No arbitrage opportunities found at this time.")
+        ws.cell(row=6, column=1).font = Font(name="Arial", italic=True, size=11)
 
     wb.save(filename)
     print(f"\n[OK] Results saved to {filename}")
