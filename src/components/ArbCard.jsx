@@ -33,11 +33,47 @@ export default function ArbCard({
 
   const betTypeLabel = isMoneyline ? "Moneyline" : isSpread ? "Spread" : a.marketType;
 
+  const isProp = a.marketType?.startsWith("player_");
+  const STAT_LABELS = { player_points: "Pts", player_assists: "Ast", player_rebounds: "Reb" };
+  const propStatLabel = STAT_LABELS[a.marketType] || a.marketType;
+  const propPlayer = a.propPlayer ?? null;
+  const propLine = a.propLine ?? null;
+  const matchQuality = a.matchQuality ?? null;
+
   return (
     <div style={{
       padding: 16, background: "#111", border: `1px solid ${selected ? "#2a6e3f" : borderColor}`,
       borderRadius: 4, opacity: isRejected ? 0.85 : 1,
     }}>
+      {isProp && (propPlayer != null || propLine != null) && (
+        <div style={{
+          padding: "10px 12px",
+          background: "#0d0a14",
+          border: "1px solid #2a2035",
+          borderRadius: 4,
+          marginBottom: 10,
+        }}>
+          <div style={{ fontSize: 12, color: "#555", marginBottom: 4, fontWeight: 500 }}>Player Prop</div>
+          <div style={{ fontSize: 15, color: "#e0e0e0", fontWeight: 600, marginBottom: 6 }}>
+            {propPlayer || "—"}
+            {propLine != null && (
+              <span style={{ fontWeight: 500, color: "#9a8fae", marginLeft: 6 }}>
+                {propLine} {propStatLabel}
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: "#888", lineHeight: 1.5 }}>
+            <span style={{ color: "#555" }}>Lines to take:</span>{" "}
+            <span style={{ color: "#b8a8d0", fontFamily: FONT }}>{a.sideA}</span>
+            <span style={{ color: "#555", margin: "0 6px" }}>+</span>
+            <span style={{ color: "#b8a8d0", fontFamily: FONT }}>{a.sideB}</span>
+          </div>
+          {matchQuality && (
+            <div style={{ fontSize: 10, color: "#555", marginTop: 4 }}>{matchQuality}</div>
+          )}
+        </div>
+      )}
+
       {vr?.reasons?.length > 0 && (
         <div style={{
           padding: "7px 10px",

@@ -2,7 +2,7 @@ import { useState } from "react";
 import ArbCard from "./ArbCard.jsx";
 import { FONT } from "../styles.js";
 
-export default function CollapsibleRejectedSection({ arbs }) {
+export default function CollapsibleRejectedSection({ arbs, CardComponent = ArbCard }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ marginTop: 10 }}>
@@ -29,7 +29,7 @@ export default function CollapsibleRejectedSection({ arbs }) {
       {open && (
         <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 6 }}>
           {arbs.map((a, i) => (
-            <ArbCard key={`reject-${i}`} a={a} onPaperTrade={null} canPaperTrade={null} />
+            <CardComponent key={`reject-${i}`} a={a} onPaperTrade={null} canPaperTrade={null} />
           ))}
         </div>
       )}

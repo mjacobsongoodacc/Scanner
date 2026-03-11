@@ -91,7 +91,7 @@ function backfillBalanceHistory(trades, settings) {
  * Calculate fee drag for a paper trade.
  * @param {Object} trade - Paper trade record
  * @param {Object} settings - Fee settings
- * @returns {{ creditCard: number, kalshi: number, platform: number, total: number }}
+ * @returns {{ creditCard: number, kalshi: number, platform: number, total: number, totalWithKalshi: number }}
  */
 function calculateFees(trade, settings) {
   const s = settings || DEFAULT_SETTINGS;
@@ -109,7 +109,9 @@ function calculateFees(trade, settings) {
     creditCard,
     kalshi,
     platform,
-    total: creditCard + kalshi + platform,
+    // Kalshi taker fees are already embedded in the stored Kalshi stake/cost.
+    total: creditCard + platform,
+    totalWithKalshi: creditCard + kalshi + platform,
   };
 }
 
@@ -249,6 +251,10 @@ export function addToPaperTrade(trade, arb, settings) {
     },
     settings
   );
+  const payoutA = lots.reduce((s, l) => s + (l.payoutA ?? 0), 0);
+  const payoutB = lots.reduce((s, l) => s + (l.payoutB ?? 0), 0);
+  const grossArbPct = totalStaked > 0 ? ((Math.min(payoutA, payoutB) - totalStaked) / totalStaked) * 100 : null;
+  const netArbPct = grossArbPct != null ? grossArbPct - (fees.total / totalStaked) * 100 : null;
 
   return {
     ...withLots,
@@ -256,9 +262,11 @@ export function addToPaperTrade(trade, arb, settings) {
     totalStaked,
     legA: { ...withLots.legA, stake: stakeA },
     legB: { ...withLots.legB, stake: stakeB },
+    grossArbPct,
+    netArbPct,
     fees,
-    payoutA: lots.reduce((s, l) => s + (l.payoutA ?? 0), 0),
-    payoutB: lots.reduce((s, l) => s + (l.payoutB ?? 0), 0),
+    payoutA,
+    payoutB,
   };
 }
 
@@ -299,6 +307,49 @@ export function settleTrade(trade, winningLeg, settings) {
     netPnl,
     fees,
     settledAt: new Date().toISOString(),
+  };
+}
+
+function recalculateTradeState(trade, settings) {
+  const withLots = backfillLots(trade);
+  const lots = withLots.lots || [];
+  const stakeA = lots.reduce((s, l) => s + (l.stakeA || 0), 0);
+  const stakeB = lots.reduce((s, l) => s + (l.stakeB || 0), 0);
+  const totalStaked = lots.reduce((s, l) => s + (l.totalStaked || 0), 0);
+  const kalshiContractsA = lots.reduce((s, l) => s + (l.kalshiContractsA || 0), 0) || null;
+  const kalshiContractsB = lots.reduce((s, l) => s + (l.kalshiContractsB || 0), 0) || null;
+  const payoutA = lots.reduce((s, l) => s + (l.payoutA ?? 0), 0);
+  const payoutB = lots.reduce((s, l) => s + (l.payoutB ?? 0), 0);
+  const fees = calculateFees(
+    {
+      betA: stakeA,
+      betB: stakeB,
+      kalshiContractsA,
+      kalshiContractsB,
+      totalStaked,
+    },
+    settings
+  );
+  const grossArbPct = totalStaked > 0 ? ((Math.min(payoutA, payoutB) - totalStaked) / totalStaked) * 100 : null;
+  const netArbPct = grossArbPct != null ? grossArbPct - (fees.total / totalStaked) * 100 : null;
+  const settledPayout = withLots.status === "SETTLED" && withLots.winningLeg ? getPayoutForTrade(withLots, withLots.winningLeg) : null;
+  const grossPnl = settledPayout != null ? settledPayout - totalStaked : null;
+  const netPnl = grossPnl != null ? grossPnl - fees.total : null;
+
+  return {
+    ...withLots,
+    totalStaked,
+    legA: { ...withLots.legA, stake: stakeA, kalshiContracts: kalshiContractsA },
+    legB: { ...withLots.legB, stake: stakeB, kalshiContracts: kalshiContractsB },
+    kalshiContractsA,
+    kalshiContractsB,
+    payoutA,
+    payoutB,
+    grossArbPct,
+    netArbPct,
+    fees,
+    grossPnl,
+    netPnl,
   };
 }
 
@@ -366,16 +417,18 @@ export function loadState(user) {
       balanceHistory: [{ ts: now, balance: DEFAULT_BANKROLL }],
     };
   }
+  const settings = { ...DEFAULT_SETTINGS, ...data.settings };
+  const trades = (data.trades ?? []).map((trade) => recalculateTradeState(trade, settings));
   let balanceHistory = data.balanceHistory;
-  if (!balanceHistory?.length && (data.trades ?? []).length > 0) {
-    balanceHistory = backfillBalanceHistory(data.trades, data.settings || DEFAULT_SETTINGS);
+  if (!balanceHistory?.length && trades.length > 0) {
+    balanceHistory = backfillBalanceHistory(trades, settings);
   } else if (!balanceHistory?.length) {
     balanceHistory = [{ ts: new Date().toISOString(), balance: data.bankroll ?? DEFAULT_BANKROLL }];
   }
   return {
     bankroll: data.bankroll ?? DEFAULT_BANKROLL,
-    settings: { ...DEFAULT_SETTINGS, ...data.settings },
-    trades: data.trades ?? [],
+    settings,
+    trades,
     opportunityKeys: data.opportunityKeys ?? [],
     balanceHistory,
   };

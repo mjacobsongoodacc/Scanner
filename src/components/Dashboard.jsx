@@ -9,10 +9,14 @@ import {
   decimalToAmerican,
   formatAmerican,
   findArbs,
+  findPropArbs,
   fetchKalshiGameMarkets,
+  fetchKalshiPlayerProps,
+  fetchOddsApiPlayerProps,
   kalshiCentsToDecimal,
 } from "../arb/index.js";
 import ArbCard, { arbToKey } from "./ArbCard.jsx";
+import PropArbCard from "./PropArbCard.jsx";
 import BetCalculator from "./BetCalculator.jsx";
 import CollapsibleRejectedSection from "./CollapsibleRejectedSection.jsx";
 import { FONT, MONO, badge } from "../styles.js";
@@ -36,9 +40,15 @@ export default function Dashboard({ config, onConfigChange }) {
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [stakeInput, setStakeInput] = useState(String(config.stake));
   const [sportDropdownOpen, setSportDropdownOpen] = useState(false);
+  const [propArbs, setPropArbs] = useState([]);
+  const [propArbsLoading, setPropArbsLoading] = useState(false);
+  const [propArbsError, setPropArbsError] = useState(null);
+  const [propArbsLoadedForSport, setPropArbsLoadedForSport] = useState(null);
+  const [propKalshiCount, setPropKalshiCount] = useState(0);
 
   const stakeRef = useRef(stake);
   stakeRef.current = stake;
+  const propsFetchConfirmedRef = useRef(false);
 
   const games = sportData[config.sport]?.games ?? [];
   const kalshiMarkets = sportData[config.sport]?.kalshiMarkets ?? [];
@@ -68,7 +78,7 @@ export default function Dashboard({ config, onConfigChange }) {
           }
         }
       });
-      return { home: g.home_team, away: g.away_team, commence: g.commence_time, bookOdds, spreadOdds };
+      return { home: g.home_team, away: g.away_team, commence: g.commence_time, eventId: g.id, bookOdds, spreadOdds };
     });
   }
 
@@ -214,6 +224,64 @@ export default function Dashboard({ config, onConfigChange }) {
     fetchAllSports(true);
   }, [fetchAllSports]);
 
+  const fetchPropsForSport = useCallback(
+    async (sport) => {
+      const sportGames = sportData[sport]?.games ?? [];
+      const eventIds = sportGames.map((g) => g.eventId).filter(Boolean);
+      if (!config.apiKey?.trim() || eventIds.length === 0) {
+        setPropArbs([]);
+        setPropArbsError("No games with event IDs. Refresh main odds first.");
+        return;
+      }
+      setPropArbsLoading(true);
+      setPropArbsError(null);
+      try {
+        const [oddsResult, kalshiProps] = await Promise.all([
+          fetchOddsApiPlayerProps(config.apiKey, sport, eventIds),
+          fetchKalshiPlayerProps(sport).catch(() => []),
+        ]);
+        setPropKalshiCount(kalshiProps?.length ?? 0);
+        if (oddsResult.error) {
+          setPropArbsError(oddsResult.error);
+          setPropArbs([]);
+          return;
+        }
+        const result = findPropArbs(sportGames, oddsResult.propsByEvent, kalshiProps, stakeRef.current);
+        const validated = validateArbs(result.opps);
+        setPropArbs(validated.all);
+        setPropArbsLoadedForSport(sport);
+      } catch (e) {
+        setPropArbsError(e.message);
+        setPropArbs([]);
+      } finally {
+        setPropArbsLoading(false);
+      }
+    },
+    [config.apiKey, sportData]
+  );
+
+  useEffect(() => {
+    if (tab === "props" && !propArbsLoading) {
+      const needsLoad = propArbsLoadedForSport !== config.sport;
+      if (!needsLoad) return;
+      const sportGames = sportData[config.sport]?.games ?? [];
+      const eventIds = sportGames.map((g) => g.eventId).filter(Boolean);
+      if (eventIds.length === 0) {
+        setPropArbsError("No games with event IDs. Refresh main odds first.");
+        return;
+      }
+      const credits = eventIds.length * 3;
+      if (!propsFetchConfirmedRef.current) {
+        if (!confirm(`Player props will use ~${credits} Odds API credits (${eventIds.length} games × 3 markets). Continue?`)) {
+          setPropArbsError("Fetch cancelled. Open Player Props tab again to retry.");
+          return;
+        }
+        propsFetchConfirmedRef.current = true;
+      }
+      fetchPropsForSport(config.sport);
+    }
+  }, [tab, config.sport, propArbsLoadedForSport, propArbsLoading, fetchPropsForSport, sportData]);
+
   useEffect(() => {
     if (games.length === 0 && kalshiMarkets.length === 0) return;
     const result = findArbs(games, kalshiMarkets, stake);
@@ -224,8 +292,10 @@ export default function Dashboard({ config, onConfigChange }) {
   }, [stake, games, kalshiMarkets]);
 
   useEffect(() => {
-    if (pt?.reportOpportunities && arbs.length > 0) pt.reportOpportunities(arbs);
-  }, [pt?.reportOpportunities, arbs]);
+    if (pt?.reportOpportunities && (arbs.length > 0 || propArbs.length > 0)) {
+      pt.reportOpportunities([...arbs, ...propArbs]);
+    }
+  }, [pt?.reportOpportunities, arbs, propArbs]);
 
   useEffect(() => {
     setSelectedKeys(new Set());
@@ -259,7 +329,9 @@ export default function Dashboard({ config, onConfigChange }) {
   }
 
   function paperTradeSelected() {
-    const selectableArbs = [...actionableArbs, ...monitorArbs];
+    const selectableArbs = tab === "props"
+      ? [...propArbs.filter((a) => a.validationResult?.status === "actionable"), ...propArbs.filter((a) => a.validationResult?.status === "monitor")]
+      : [...actionableArbs, ...monitorArbs];
     const selected = selectableArbs.filter((a) => selectedKeys.has(arbToKey(a)));
     const toAdd = [];
     const toCreate = [];
@@ -431,6 +503,7 @@ export default function Dashboard({ config, onConfigChange }) {
       <div style={{ display: "flex", padding: "0 28px", borderBottom: "1px solid #1a1a1a" }}>
         {[
           { key: "arbs", label: `Opportunities${arbs.length > 0 ? ` (${arbs.length})` : ""}` },
+          { key: "props", label: `Player Props${tab === "props" && propArbs.length > 0 ? ` (${propArbs.length})` : ""}` },
           { key: "paper", label: "Paper Trading" },
           { key: "games", label: `All Games (${gameCount})` },
           { key: "kalshi", label: `Kalshi (${kalshiMarkets.length})` },
@@ -477,6 +550,9 @@ export default function Dashboard({ config, onConfigChange }) {
 
         {tab === "arbs" && (
           <>
+            <div style={{ padding: "12px 14px", background: "#1a1500", border: "1px solid #3a2a00", borderRadius: 4, marginBottom: 14, fontSize: 12, color: "#c89030", lineHeight: 1.5 }}>
+              <strong>Disclaimer:</strong> Kalshi cross-exchange arbs include taker fees that can turn apparent profits into losses. Verify fees and execution before placing real bets.
+            </div>
             {bestImpDetail && arbs.length === 0 && !loading && (
               <div style={{ padding: 14, background: "#111", border: "1px solid #1a1a1a", borderRadius: 4, marginBottom: 14 }}>
                 <div style={{ fontSize: 11, color: "#666", marginBottom: 6, fontWeight: 500 }}>Closest to Arbitrage</div>
@@ -599,6 +675,126 @@ export default function Dashboard({ config, onConfigChange }) {
 
                 {rejectedArbs.length > 0 && (
                   <CollapsibleRejectedSection arbs={rejectedArbs} />
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === "props" && (
+          <>
+            <div style={{ padding: "12px 14px", background: "#1a1500", border: "1px solid #3a2a00", borderRadius: 4, marginBottom: 14, fontSize: 12, color: "#c89030", lineHeight: 1.5 }}>
+              Player props use event-odds endpoint (~{games.length} games × 3 markets = {games.length * 3} API credits). Props cached 1h.
+              {propKalshiCount > 0 ? (
+                <span style={{ marginLeft: 8, color: "#5a8fae" }}>Kalshi: {propKalshiCount} prop markets included</span>
+              ) : (
+                <span style={{ marginLeft: 8, color: "#888" }}>Kalshi player props not found for {config.sport === "nba" ? "NBA" : config.sport === "ncaab" ? "NCAAB" : config.sport} — showing sportsbook-only arbs</span>
+              )}
+            </div>
+            {propArbsError && (
+              <div style={{ padding: 14, background: "#1a0f0f", border: "1px solid #3a1a1a", borderRadius: 4, color: "#c04040", fontSize: 12, marginBottom: 14 }}>
+                {propArbsError}
+              </div>
+            )}
+            {propArbsLoading ? (
+              <div style={{ padding: 48, textAlign: "center", color: "#555", fontSize: 14 }}>
+                Loading player props…
+              </div>
+            ) : propArbs.length === 0 ? (
+              <div style={{ padding: 48, textAlign: "center" }}>
+                <div style={{ fontSize: 14, color: "#555", marginBottom: 6 }}>No player prop arbitrage opportunities detected</div>
+                <div style={{ fontSize: 12, color: "#333" }}>Select NBA or NCAA Basketball and ensure games are loaded.</div>
+                <button
+                  onClick={() => { setPropArbsLoadedForSport(null); fetchPropsForSport(config.sport); }}
+                  style={{ marginTop: 14, padding: "8px 16px", background: "#151515", border: "1px solid #2a2a2a", borderRadius: 4, color: "#5a9e6f", fontSize: 12, fontFamily: FONT, cursor: "pointer" }}
+                >
+                  Refresh Props
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {selectedCount > 0 && (
+                  <div style={{
+                    padding: "12px 16px",
+                    background: "#111",
+                    border: "1px solid #1a2a1a",
+                    borderRadius: 4,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    flexWrap: "wrap",
+                  }}>
+                    <span style={{ fontSize: 12, color: "#888" }}>{selectedCount} selected</span>
+                    <button
+                      onClick={paperTradeSelected}
+                      style={{
+                        padding: "8px 16px",
+                        background: "#2a6e3f",
+                        border: "1px solid #2a6e3f",
+                        borderRadius: 4,
+                        color: "#fff",
+                        fontSize: 12,
+                        fontFamily: FONT,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Paper Trade Selected
+                    </button>
+                    <button
+                      onClick={clearSelection}
+                      style={{
+                        padding: "8px 16px",
+                        background: "#151515",
+                        border: "1px solid #2a2a2a",
+                        borderRadius: 4,
+                        color: "#888",
+                        fontSize: 12,
+                        fontFamily: FONT,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+                {propArbs
+                  .filter((a) => a.validationResult?.status === "actionable")
+                  .map((a, i) => (
+                    <PropArbCard
+                      key={`prop-actionable-${i}`}
+                      a={a}
+                      onPaperTrade={pt?.paperTrade}
+                      canPaperTrade={pt?.canPaperTrade}
+                      existingOpenTrade={pt?.getOpenTradeForArb?.(a) ?? null}
+                      onAddToPaperTrade={pt?.addToPaperTrade}
+                      canAddToPaperTrade={pt?.canAddToPaperTrade}
+                      selected={selectedKeys.has(arbToKey(a))}
+                      onToggleSelect={toggleSelect}
+                      selectable
+                    />
+                  ))}
+                {propArbs
+                  .filter((a) => a.validationResult?.status === "monitor")
+                  .map((a, i) => (
+                    <PropArbCard
+                      key={`prop-monitor-${i}`}
+                      a={a}
+                      onPaperTrade={null}
+                      canPaperTrade={null}
+                      existingOpenTrade={pt?.getOpenTradeForArb?.(a) ?? null}
+                      onAddToPaperTrade={pt?.addToPaperTrade}
+                      canAddToPaperTrade={pt?.canAddToPaperTrade}
+                      selected={selectedKeys.has(arbToKey(a))}
+                      onToggleSelect={toggleSelect}
+                      selectable
+                    />
+                  ))}
+                {propArbs.filter((a) => a.validationResult?.status === "reject").length > 0 && (
+                  <CollapsibleRejectedSection
+                    arbs={propArbs.filter((a) => a.validationResult?.status === "reject")}
+                    CardComponent={PropArbCard}
+                  />
                 )}
               </div>
             )}

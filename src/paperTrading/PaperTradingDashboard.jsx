@@ -22,6 +22,7 @@ export default function PaperTradingDashboard({ defaultExpanded = false }) {
   const [showSettings, setShowSettings] = useState(false);
   const [sortBy, setSortBy] = useState("date");
   const [sortDesc, setSortDesc] = useState(true);
+  const [excelMessage, setExcelMessage] = useState(null);
 
   const metrics = useMemo(() => {
     const settled = pt.trades.filter((t) => t.status === "SETTLED");
@@ -29,8 +30,8 @@ export default function PaperTradingDashboard({ defaultExpanded = false }) {
     const feeCreditCard = settled.reduce((s, t) => s + (t.fees?.creditCard ?? 0), 0);
     const feeKalshi = settled.reduce((s, t) => s + (t.fees?.kalshi ?? 0), 0);
     const feePlatform = settled.reduce((s, t) => s + (t.fees?.platform ?? 0), 0);
-    const totalFees = feeCreditCard + feeKalshi + feePlatform;
-    const netPnl = grossPnl - totalFees;
+    const totalFees = feeCreditCard + feePlatform;
+    const netPnl = settled.reduce((s, t) => s + (t.netPnl ?? ((t.grossPnl ?? 0) - (t.fees?.total ?? 0))), 0);
     const wins = settled.filter((t) => (t.netPnl ?? 0) > 0).length;
     const winRate = settled.length ? (wins / settled.length) * 100 : 0;
     const avgMargin = settled.length ? settled.reduce((s, t) => s + (t.netArbPct ?? 0), 0) / settled.length : 0;
@@ -130,7 +131,7 @@ export default function PaperTradingDashboard({ defaultExpanded = false }) {
               { label: "Open", value: metrics.openCount, color: "#c89030" },
               { label: "Gross P&L", value: `$${metrics.grossPnl.toFixed(2)}`, color: "#e0e0e0" },
               { label: "Net P&L", value: `$${metrics.netPnl.toFixed(2)}`, color: metrics.netPnl >= 0 ? "#5a9e6f" : "#c04040" },
-              { label: "Fee drag", value: `$${metrics.totalFees.toFixed(2)}`, color: "#c89030" },
+              { label: "Additional fees", value: `$${metrics.totalFees.toFixed(2)}`, color: "#c89030" },
               { label: "Win rate", value: `${metrics.winRate.toFixed(1)}%`, color: "#5a9e6f" },
               { label: "Avg margin", value: `${metrics.avgMargin.toFixed(2)}%`, color: "#888" },
               { label: "Bankroll", value: `$${metrics.bankroll.toFixed(2)}`, color: "#5a9e6f" },
@@ -142,8 +143,56 @@ export default function PaperTradingDashboard({ defaultExpanded = false }) {
             ))}
           </div>
 
-          {/* Balance history chart */}
+          {/* Balance history chart + Excel export */}
           <div style={{ padding: "16px 20px", borderBottom: "1px solid #1a1a1a", background: "#0a0a0a" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+              <span style={{ fontSize: 11, color: "#555", fontWeight: 500 }}>All-Time PnL History</span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button
+                  onClick={() => pt.exportPnLToExcel()}
+                  style={{
+                    padding: "6px 12px",
+                    background: "#151515",
+                    border: "1px solid #2a4a2a",
+                    borderRadius: 4,
+                    color: "#5a9e6f",
+                    fontSize: 11,
+                    fontFamily: FONT,
+                    cursor: "pointer",
+                    fontWeight: 500,
+                  }}
+                >
+                  Download Excel
+                </button>
+                {pt.canUpdateExistingExcelFile && (
+                  <button
+                    onClick={async () => {
+                      setExcelMessage(null);
+                      const result = await pt.updateExistingExcelFile();
+                      setExcelMessage(result.ok ? result.message : result.message);
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      background: "#151515",
+                      border: "1px solid #3a5a4a",
+                      borderRadius: 4,
+                      color: "#6ab07f",
+                      fontSize: 11,
+                      fontFamily: FONT,
+                      cursor: "pointer",
+                      fontWeight: 500,
+                    }}
+                  >
+                    Update existing file
+                  </button>
+                )}
+              </div>
+            </div>
+            {excelMessage && (
+              <div style={{ fontSize: 11, color: excelMessage.includes("successfully") ? "#5a9e6f" : excelMessage === "Cancelled." ? "#888" : "#c89030", marginBottom: 8 }}>
+                {excelMessage}
+              </div>
+            )}
             <BalanceHistoryChart balanceHistory={pt.balanceHistory ?? []} />
           </div>
 
@@ -152,7 +201,7 @@ export default function PaperTradingDashboard({ defaultExpanded = false }) {
             <div style={{ padding: "8px 20px", fontSize: 11, color: "#555", display: "flex", gap: 16, flexWrap: "wrap", borderBottom: "1px solid #1a1a1a" }}>
               Fee breakdown:{" "}
               {metrics.feeCreditCard > 0 && <span>CC: ${metrics.feeCreditCard.toFixed(2)}</span>}
-              {metrics.feeKalshi > 0 && <span>Kalshi: ${metrics.feeKalshi.toFixed(2)}</span>}
+              {metrics.feeKalshi > 0 && <span>Kalshi incl. stake: ${metrics.feeKalshi.toFixed(2)}</span>}
               {metrics.feePlatform > 0 && <span>Platform: ${metrics.feePlatform.toFixed(2)}</span>}
             </div>
           )}

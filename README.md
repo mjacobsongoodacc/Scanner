@@ -6,8 +6,11 @@ Multi-sport arbitrage scanner for MLB, NBA, NCAA Basketball, and NFL. Finds prof
 
 - **Cross-book arbitrage detection** — compares odds across DraftKings, FanDuel, BetMGM, and other major sportsbooks
 - **Kalshi integration** — spots arbitrage between Kalshi event contracts and traditional sportsbooks, accounting for taker fees and whole-contract sizing
+- **Player props arbitrage** — scans Over/Under player points, assists, and rebounds (NBA, NCAAB) across sportsbooks and Kalshi; lazy-loads on Player Props tab with API credit confirmation
 - **Moneyline & spread markets** — scans both market types for each game
 - **Confidence scoring** — rates opportunities by Kalshi volume and bid-ask spread
+- **Execution validation** — filters phantom/stale arbs; actionable vs monitor vs rejected
+- **Paper trading** — track simulated trades with PnL and Excel export
 - **Built-in calculator** — manual two-leg arbitrage calculator with Kalshi fee modeling
 - **Login-protected dashboard** — authentication gate before accessing the scanner
 - **Multi-sport support** — Baseball (MLB), Basketball (NBA), NCAA Basketball, NFL via dropdown selector
@@ -48,6 +51,8 @@ Sportsbook odds come from [The Odds API](https://the-odds-api.com/). Get a free 
    ```
 
 **Important:** This is different from the Kalshi API key. Do not use your Kalshi key for the Odds API.
+
+**Player props:** The Player Props tab uses the event-odds endpoint (~N games × 3 markets per fetch). A confirmation dialog appears before the first props fetch; results are cached 1 hour.
 
 ### Kalshi API (optional)
 
@@ -105,10 +110,18 @@ Outputs an Excel file with all detected arbitrage opportunities.
 │   ├── App.jsx
 │   ├── styles.js
 │   ├── arb/                   # Arb detection, odds utils, Kalshi fetch
+│   │   ├── fetchKalshiMarkets.js
+│   │   ├── fetchKalshiPlayerProps.js
+│   │   ├── discoverKalshiPropSeries.js
+│   │   ├── fetchOddsApiPlayerProps.js
+│   │   ├── findArbs.js / findPropArbs.js
+│   │   ├── playerPropUtils.js
+│   │   └── stakeSizing.js
 │   ├── arbValidation/         # Execution validation, confidence scoring
-│   ├── paperTrading/          # Paper trading store & dashboard
-│   └── components/            # LoginScreen, SetupScreen, Dashboard, ArbCard, etc.
-├── arbitrage_scanner.py
+│   ├── paperTrading/          # Paper trading store, dashboard, Excel export
+│   └── components/           # Dashboard, ArbCard, PropArbCard, etc.
+├── arbitrage_scanner.py      # Python CLI scanner
+├── docs/ARB_VALIDATION.md     # Validation pipeline docs
 ├── vite.config.js
 └── package.json
 ```

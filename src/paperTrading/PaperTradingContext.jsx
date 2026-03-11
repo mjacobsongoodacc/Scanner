@@ -18,6 +18,7 @@ import {
   getInitialState,
   getDefaultBankroll,
 } from "./paperTradingStore.js";
+import { downloadPnLExcel, updateExistingExcelFile as updateExistingExcelFileFn, canUpdateExistingExcel } from "./exportPnLToExcel.js";
 
 const PaperTradingContext = createContext(null);
 
@@ -193,6 +194,16 @@ export function PaperTradingProvider({ children, user }) {
     return exportTradesToCSV(state.trades);
   }, [state?.trades]);
 
+  const exportPnLToExcel = useCallback(() => {
+    downloadPnLExcel(state);
+  }, [state]);
+
+  const updateExistingExcelFile = useCallback(async () => {
+    return updateExistingExcelFileFn(state);
+  }, [state]);
+
+  const canUpdateExistingExcelFile = canUpdateExistingExcel();
+
   const clearAccount = useCallback(() => {
     dispatch({ type: "CLEAR_ACCOUNT" });
   }, []);
@@ -210,6 +221,9 @@ export function PaperTradingProvider({ children, user }) {
         updateBankroll,
         reportOpportunities,
         exportCSV,
+        exportPnLToExcel,
+        updateExistingExcelFile,
+        canUpdateExistingExcelFile,
         clearAccount,
         canPaperTrade: (arb) => {
           const trade = createPaperTrade(arb, state.settings);

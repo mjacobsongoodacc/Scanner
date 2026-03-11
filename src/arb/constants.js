@@ -45,3 +45,12 @@ export const SPORT_CONFIG = {
 export const KALSHI_GAME_SERIES = Object.fromEntries(
   Object.entries(SPORT_CONFIG).map(([k, v]) => [k, v.kalshiSeries])
 );
+
+/** Odds API market keys for player props (basketball). */
+export const PLAYER_PROP_STATS = ["player_points", "player_assists", "player_rebounds"];
+
+/** Fallback ticker patterns for Kalshi player prop series discovery. */
+export const KALSHI_PROP_SERIES_PATTERNS = {
+  nba: ["KXNBAPTS", "KXNBAPLAYER", "KXNBAPLAYERPOINTS", "KXNBA"],
+  ncaab: ["KXNCAABPTS", "KXNCAABPLAYER", "KXNCAAMB"],
+};
