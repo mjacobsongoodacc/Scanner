@@ -11,9 +11,18 @@ Usage:
   python arbitrage_scanner.py --odds-api-key YOUR_KEY [--sport nba|ncaab|both] [--stake 100]
 """
 
-import argparse, json, math, re, requests, sys
+import argparse, json, math, os, re, requests, sys
 from datetime import datetime, timezone
 from openpyxl import Workbook
+
+# Load .env if present (optional; Kalshi market data is public, no auth required)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+KALSHI_API_KEY = os.environ.get("KALSHI_API_KEY")  # Optional Bearer token; market data works without auth
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, numbers
 from openpyxl.utils import get_column_letter
 
@@ -100,10 +109,9 @@ def fetch_kalshi_game_markets(sport="nba"):
     kalshi_series = cfg["kalshi_series"]
     all_markets = []
 
-    headers = {
-        "Accept": "application/json",
-        "Authorization": f"Bearer {KALSHI_API_KEY}",
-    }
+    headers = {"Accept": "application/json"}
+    if KALSHI_API_KEY:
+        headers["Authorization"] = f"Bearer {KALSHI_API_KEY}"
 
     for mkt_type, series_ticker in kalshi_series.items():
         cursor = ""
@@ -130,14 +138,26 @@ def fetch_kalshi_game_markets(sport="nba"):
                 for mkt in ev.get("markets", []):
                     if mkt.get("status") in ("finalized", "closed"):
                         continue
-                    yes_ask = mkt.get("yes_ask", 0)
-                    no_ask = mkt.get("no_ask", 0)
-                    yes_bid = mkt.get("yes_bid", 0)
-                    no_bid = mkt.get("no_bid", 0)
+                    # Kalshi fixed-point migration (March 2026): use *_dollars and volume_fp
+                    def _dollars_to_cents(val):
+                        if val is None:
+                            return 0
+                        if isinstance(val, (int, float)):
+                            return int(round(val)) if 0 <= val <= 1 else int(val)
+                        s = str(val).strip()
+                        if not s:
+                            return 0
+                        return int(round(float(s) * 100))
+
+                    yes_ask = _dollars_to_cents(mkt.get("yes_ask_dollars") or mkt.get("yes_ask"))
+                    no_ask = _dollars_to_cents(mkt.get("no_ask_dollars") or mkt.get("no_ask"))
+                    yes_bid = _dollars_to_cents(mkt.get("yes_bid_dollars") or mkt.get("yes_bid"))
+                    no_bid = _dollars_to_cents(mkt.get("no_bid_dollars") or mkt.get("no_bid"))
                     if not yes_ask and not no_ask:
                         continue
 
-                    vol = mkt.get("volume", 0)
+                    vol_raw = mkt.get("volume_fp") or mkt.get("volume") or 0
+                    vol = int(float(vol_raw)) if vol_raw else 0
                     yes_ba = (yes_ask - yes_bid) if yes_ask and yes_bid else 99
                     no_ba = (no_ask - no_bid) if no_ask and no_bid else 99
 

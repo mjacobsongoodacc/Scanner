@@ -61,13 +61,20 @@ async function fetchMarketsForTicker(ticker) {
     for (const ev of data.events || []) {
       for (const mkt of ev.markets || []) {
         if (mkt.status === "finalized" || mkt.status === "closed") continue;
-        const yesAsk = mkt.yes_ask || 0;
-        const noAsk = mkt.no_ask || 0;
-        const yesBid = mkt.yes_bid || 0;
-        const noBid = mkt.no_bid || 0;
+        const dollarsToCents = (v) => {
+          if (v == null) return 0;
+          if (typeof v === "number") return v <= 1 ? Math.round(v * 100) : Math.round(v);
+          const s = String(v).trim();
+          return s ? Math.round(parseFloat(s) * 100) : 0;
+        };
+        const yesAsk = dollarsToCents(mkt.yes_ask_dollars ?? mkt.yes_ask);
+        const noAsk = dollarsToCents(mkt.no_ask_dollars ?? mkt.no_ask);
+        const yesBid = dollarsToCents(mkt.yes_bid_dollars ?? mkt.yes_bid);
+        const noBid = dollarsToCents(mkt.no_bid_dollars ?? mkt.no_bid);
         if (!yesAsk && !noAsk) continue;
 
-        const vol = mkt.volume || 0;
+        const volRaw = mkt.volume_fp ?? mkt.volume ?? 0;
+        const vol = volRaw ? Math.floor(parseFloat(volRaw)) : 0;
         const yesBaSpread = yesAsk && yesBid ? yesAsk - yesBid : 99;
         const noBaSpread = noAsk && noBid ? noAsk - noBid : 99;
         if (yesBaSpread > 15 && noBaSpread > 15) continue;
