@@ -1,0 +1,577 @@
+{
+  "name": "Startup Diligence 4/16",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "diligence",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -448,
+        352
+      ],
+      "id": "38d77f97-0bf3-4864-9b36-39962a5a4395",
+      "name": "Webhook",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preprocess incoming startup documents\nconst body = $input.first().json.body || $input.first().json;\nconst documents = body.documents || [];\nconst companyName = body.companyName || 'Unknown Company';\nconst companyId = body.companyId || 'unknown';\n\n// Combine all document text\nconst combinedText = documents.map(d => {\n  const label = d.type ? `[${d.type.toUpperCase()}]` : '[DOC]';\n  return `${label}\\n${d.content || d.text || JSON.stringify(d)}`;\n}).join('\\n\\n---\\n\\n');\n\nreturn [{\n  json: {\n    companyName,\n    companyId,\n    documents,\n    combinedText,\n    docCount: documents.length,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        352
+      ],
+      "id": "ce7d402c-a435-4c25-ab30-9c629794b4b3",
+      "name": "Preprocess Documents"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst documents = body.documents || [];\nconst companyName = body.companyName || 'Unknown Company';\nconst companyId = body.companyId || 'unknown';\n\nconst combinedText = documents.length > 0\n  ? documents.map(d => {\n      const label = d.type ? `[${d.type.toUpperCase()}]` : '[DOC]';\n      return `${label}\\n${d.content || d.text || JSON.stringify(d)}`;\n    }).join('\\n\\n---\\n\\n')\n  : (body.combinedText || '');\n\nreturn [{\n  json: {\n    companyName,\n    companyId,\n    documents,\n    combinedText,\n    docCount: documents.length,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        352
+      ],
+      "id": "d01abe5f-65c5-4915-811a-82afd6fad0d2",
+      "name": "Document Classifier"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a KPI & Financial Analysis Agent for startup due diligence. Analyze the following startup documents and extract:\n1. Key financial metrics (ARR, MRR, revenue, burn rate, runway)\n2. Unit economics (CAC, LTV, gross margin, payback period)\n3. KPI trends and growth rates\n4. Financial health assessment\n5. Contradictions or red flags in the numbers\n\nCompany: {{ $json.companyName }}\nDocuments: {{ $json.combinedText }}\n\nProvide a structured JSON response with: metrics, trends, health_score (1-10), red_flags, and summary.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        448,
+        144
+      ],
+      "id": "96c0a63f-8dee-49cf-8353-01f2827924c4",
+      "name": "KPI & Financials Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "id"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        432,
+        272
+      ],
+      "id": "cfc7e073-f009-4427-a93b-a1bdcc49ec1e",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a Traction & Team Analysis Agent for startup due diligence. Analyze the following startup documents and evaluate:\n1. Team backgrounds, expertise, and relevant experience\n2. Founder-market fit and leadership credentials\n3. Customer traction metrics (growth, retention, NPS, churn)\n4. Revenue growth trajectory and sales pipeline\n5. Key partnerships, customers, and strategic wins\n6. Red flags in team or traction\n\nCompany: {{ $json.companyName }}\nDocuments: {{ $json.combinedText }}\n\nProvide a structured JSON response with: team_score (1-10), traction_score (1-10), key_strengths, red_flags, and summary.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        576,
+        544
+      ],
+      "id": "77ccf2a2-4aa7-4407-b564-d7446154edd0",
+      "name": "Traction & Team Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "id"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        608,
+        688
+      ],
+      "id": "48cf6ba7-6ac8-45fc-a2a9-bb71bcb15474",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a Red Flags & Risk Analysis Agent for startup due diligence. Your job is to identify ALL potential risks, inconsistencies, and red flags in the startup's documents. Analyze:\n1. Financial inconsistencies or unrealistic projections\n2. Legal risks, regulatory issues, or compliance concerns\n3. Team gaps, conflicts of interest, or credibility issues\n4. Market/competition risks being downplayed\n5. Contradictions between different documents\n6. Missing critical information (what they're NOT saying)\n7. Technology risks or IP issues\n8. Customer concentration risks\n\nCompany: {{ $json.companyName }}\nDocuments: {{ $json.combinedText }}\n\nProvide a structured JSON response with: critical_flags (high priority), warning_flags (medium priority), minor_flags (low priority), overall_risk_score (1-10, 10=highest risk), and recommendations.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        560,
+        848
+      ],
+      "id": "70b9ade7-8501-4c6a-ab30-bf294e672fa7",
+      "name": "Red Flags Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "id"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        544,
+        1056
+      ],
+      "id": "af7fb0b6-459e-47c5-8808-4dfc286f58dd",
+      "name": "OpenAI Chat Model2",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a Market Intelligence & Competitive Landscape Agent for startup due diligence. Create a comprehensive market map for the startup. Analyze:\n1. Total Addressable Market (TAM), SAM, and SOM with supporting data\n2. Direct competitors with feature comparison and positioning\n3. Indirect competitors and substitute products\n4. Market trends and growth drivers\n5. The startup's unique differentiation and competitive moat\n6. Potential market entry barriers\n7. Recent funding and M&A activity in the space\n8. Customer segments and go-to-market fit\n\nCompany: {{ $json.companyName }}\nDocuments: {{ $json.combinedText }}\n\nProvide a structured JSON response with: market_size, growth_rate, competitive_map (array of competitors with attributes), differentiation_score (1-10), market_timing_assessment, and strategic_recommendations.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        448,
+        -128
+      ],
+      "id": "6259a294-d5cd-489c-a025-2a63c6542772",
+      "name": "Market Map Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "id"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        464,
+        32
+      ],
+      "id": "94c1de53-3300-49e4-babc-0717614c4ec4",
+      "name": "OpenAI Chat Model3",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        976,
+        192
+      ],
+      "id": "9a383822-e418-4e09-8cb7-a1244a91e870",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format merged specialist outputs for Audit Agent\nconst items = $input.all();\nconst companyName = items[0]?.json?.companyName || 'Unknown Company';\nconst agentNames = ['KPI & Financials', 'Traction & Team', 'Market Map', 'Red Flags'];\nconst output = {};\nitems.forEach((item, i) => {\n  output[agentNames[i] || `Agent ${i + 1}`] = item.json;\n});\nreturn [{\n  json: {\n    companyName,\n    output: JSON.stringify(output, null, 2)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        224
+      ],
+      "id": "36334ad2-328c-41d4-970d-f533d1612369",
+      "name": "Format for Audit"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are the Quality Assurance & Audit Agent for startup due diligence. Your job is to review and verify the work of 4 specialist agents (KPI & Financials, Traction & Team, Red Flags, Market Map) and cross-check their findings against real-world data.\n\nAnalysis from specialist agents:\n{{ $json.output }}\n\nOriginal company data:\n{{ $json.companyName }}\n\nYour tasks:\n1. Cross-verify financial claims against industry benchmarks\n2. Validate market size estimates using public data sources\n3. Check if competitive landscape is complete and accurate\n4. Verify that all critical red flags were identified\n5. Check for contradictions between different agent outputs\n6. Assign confidence scores to each agent's analysis\n7. Generate a final consolidated investment memo with your audit stamp\n8. Provide an overall investment recommendation (Pass/Watch/Fail)\n\nProvide a structured JSON response with: audit_findings, confidence_scores (per agent), contradictions_found, additional_flags, final_memo, investment_recommendation, and overall_diligence_score (1-10).",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1536,
+        256
+      ],
+      "id": "d6a448b9-1655-40ed-9d48-4d686a1b7910",
+      "name": "Audit Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "id"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1536,
+        464
+      ],
+      "id": "1ac32f86-f2a5-43c6-a03e-c5bed55a90c8",
+      "name": "OpenAI Chat Model4",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.companyId ?? 'default-session' }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        848,
+        1280
+      ],
+      "id": "d674322c-c9e9-4cfc-b1a5-e21999b60758",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "message": "Your deliverables are ready for review",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1904,
+        256
+      ],
+      "id": "bc7244c3-fada-45a7-b781-ef332bbeecac",
+      "name": "Send a text message",
+      "webhookId": "YOUR_WEBHOOK_ID",
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=Workflow error: {{ $json.error.message }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2320,
+        416
+      ],
+      "id": "c888ae91-2ab7-481e-a09d-b2726297316b",
+      "name": "Send a text message1",
+      "webhookId": "YOUR_WEBHOOK_ID",
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Preprocess Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preprocess Documents": {
+      "main": [
+        [
+          {
+            "node": "Document Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Document Classifier": {
+      "main": [
+        [
+          {
+            "node": "KPI & Financials Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Traction & Team Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Market Map Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Red Flags Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "KPI & Financials Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Traction & Team Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Red Flags Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Market Map Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Format for Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model4": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Audit Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format for Audit": {
+      "main": [
+        [
+          {
+            "node": "Audit Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "KPI & Financials Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Traction & Team Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Market Map Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Red Flags Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Audit Agent": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Traction & Team Agent",
+            "type": "ai_memory",
+            "index": 0
+          },
+          {
+            "node": "Market Map Agent",
+            "type": "ai_memory",
+            "index": 0
+          },
+          {
+            "node": "KPI & Financials Agent",
+            "type": "ai_memory",
+            "index": 0
+          },
+          {
+            "node": "Audit Agent",
+            "type": "ai_memory",
+            "index": 0
+          },
+          {
+            "node": "Red Flags Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Send a text message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "fca57c77-98fb-419f-aff1-4552f66aba97",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_INSTANCE_ID"
+  },
+  "id": "YOUR_WORKFLOW_ID",
+  "tags": []
+}
