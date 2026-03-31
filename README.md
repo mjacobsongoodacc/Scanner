@@ -126,6 +126,39 @@ Outputs an Excel file with all detected arbitrage opportunities.
 └── package.json
 ```
 
+## How it works
+
+### Arbitrage detection
+
+An arbitrage exists when the implied probabilities of two opposite outcomes sum to less than 1.0:
+
+```
+1/decimalOdds_A + 1/decimalOdds_B < 1.0
+```
+
+The profit margin is `(1 − implied_sum) / implied_sum` as a percentage of total stake. The scanner flags opportunities below a 1.03 implied sum threshold (true arbs and near-arbs).
+
+### Kalshi fee model
+
+Kalshi charges a 7% taker fee on the notional contract value:
+
+```
+taker_fee = ceil(0.07 × contracts × (price_cents/100) × (1 − price_cents/100) × 100) / 100
+```
+
+This fee is applied per leg and subtracted before determining whether an opportunity is profitable.
+
+### Validation pipeline
+
+Raw arbs are passed through a validation pipeline that:
+
+1. Evaluates Kalshi bid-ask spread and volume (slippage risk)
+2. Applies execution-adjusted margin accounting for fees and slippage
+3. Assigns status: **Actionable** (green), **Monitor** (amber), or **Rejected** (red)
+4. Computes a 0–100 confidence score
+
+See [`docs/ARB_VALIDATION.md`](docs/ARB_VALIDATION.md) for full details.
+
 ## License
 
 ISC
