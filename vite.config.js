@@ -1,25 +1,39 @@
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
 import https from "https";
 import crypto from "crypto";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 
-dotenv.config();
-
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Same root `.env` as `scripts/dev-free-port.mjs` so `VITE_DEV_PORT` always agrees.
+dotenv.config({ path: path.resolve(__dirname, ".env") });
 const KALSHI_HOST = process.env.KALSHI_API_HOST || "api.elections.kalshi.com";
 const KALSHI_API_KEY_ID = process.env.KALSHI_API_KEY_ID;
-const KALSHI_KEY_PATH = process.env.KALSHI_PRIVATE_KEY_PATH || "./kalshi.key";
+function resolveKalshiKeyPath() {
+  const raw = process.env.KALSHI_PRIVATE_KEY_PATH;
+  // vite.config.js lives at repo root — default key is ./kalshi.key next to it
+  if (!raw) return path.resolve(__dirname, "kalshi.key");
+  if (path.isAbsolute(raw)) return raw;
+  return path.resolve(process.cwd(), raw);
+}
+const KALSHI_KEY_PATH = resolveKalshiKeyPath();
 
-let privateKey = null;
-try {
-  privateKey = fs.readFileSync(KALSHI_KEY_PATH, "utf-8");
-} catch {
-  // Private key optional for public endpoints (e.g. GET /events)
+/** Lazy read so a bad path does not block Vite config. Path defaults to repo-root kalshi.key. */
+let privateKeyCache;
+function getPrivateKey() {
+  if (privateKeyCache !== undefined) return privateKeyCache;
+  try {
+    privateKeyCache = fs.readFileSync(KALSHI_KEY_PATH, "utf-8");
+  } catch {
+    privateKeyCache = null;
+  }
+  return privateKeyCache;
 }
 
-function signRequest(timestamp, method, path) {
-  const pathWithoutQuery = path.split("?")[0];
+function signRequest(privateKey, timestamp, method, urlPath) {
+  const pathWithoutQuery = urlPath.split("?")[0];
   const message = `${timestamp}${method}${pathWithoutQuery}`;
   const signature = crypto.sign("sha256", Buffer.from(message), {
     key: privateKey,
@@ -33,11 +47,16 @@ function kalshiProxyPlugin() {
   return {
     name: "kalshi-proxy",
     configureServer(server) {
-      server.middlewares.use("/kalshi-api", (req, res) => {
+      // Guard: prefix-mounted middleware must not run for GET `/` (hangs proxying index to Kalshi).
+      server.middlewares.use((req, res, next) => {
+        const rawUrl = req.url || "";
+        const pathOnly = rawUrl.split("?")[0] || "";
+        if (!pathOnly.startsWith("/kalshi-api")) {
+          return next();
+        }
         let upstreamPath;
-        const u = (req.url || "").split("?");
-        const pathPart = u[0] || "";
-        const queryPart = u[1] || "";
+        const pathPart = pathOnly;
+        const queryPart = rawUrl.split("?")[1] || "";
         const params = new URLSearchParams(queryPart);
         const pathParam = params.get("path");
         if (pathParam) {
@@ -48,14 +67,14 @@ function kalshiProxyPlugin() {
           if (!upstreamPath.startsWith("/")) upstreamPath = `/${upstreamPath}`;
         }
 
+        const privateKey = getPrivateKey();
         const hasAuth = privateKey && KALSHI_API_KEY_ID;
-        const isGetEvents = req.method === "GET" && upstreamPath.includes("/events");
 
         const headers = { Accept: "application/json" };
         if (hasAuth) {
           const pathForSigning = upstreamPath.split("?")[0];
           const timestamp = String(Date.now());
-          const signature = signRequest(timestamp, req.method, pathForSigning);
+          const signature = signRequest(privateKey, timestamp, req.method, pathForSigning);
           headers["KALSHI-ACCESS-KEY"] = KALSHI_API_KEY_ID;
           headers["KALSHI-ACCESS-TIMESTAMP"] = timestamp;
           headers["KALSHI-ACCESS-SIGNATURE"] = signature;
@@ -69,7 +88,8 @@ function kalshiProxyPlugin() {
         };
 
         const proxyReq = https.request(options, (proxyRes) => {
-          res.writeHead(proxyRes.statusCode, {
+          const code = proxyRes.statusCode ?? 502;
+          res.writeHead(code, {
             "Content-Type": proxyRes.headers["content-type"] || "application/json",
             "Access-Control-Allow-Origin": "*",
           });
@@ -85,6 +105,27 @@ function kalshiProxyPlugin() {
   };
 }
 
+const DEV_PORT = Number(process.env.VITE_DEV_PORT) || 5180;
+
 export default defineConfig({
-  plugins: [react(), kalshiProxyPlugin()],
+  // JSX via esbuild (plugin-react/Babel was hanging dev transforms on macOS after sleep).
+  esbuild: {
+    jsx: "automatic",
+    jsxImportSource: "react",
+  },
+  plugins: [kalshiProxyPlugin()],
+  server: {
+    host: true,
+    port: DEV_PORT,
+    strictPort: true,
+    // macOS: FS watchers often break after sleep; polling avoids a wedged dev server.
+    watch: { usePolling: true, interval: 300 },
+    // Avoid dev-only deadlocks where pre-transforming linked modules never completes.
+    preTransformRequests: false,
+  },
+  preview: {
+    host: true,
+    port: 4173,
+    strictPort: false,
+  },
 });

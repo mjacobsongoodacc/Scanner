@@ -38,7 +38,7 @@ npm install
 npm run dev
 ```
 
-The app starts at `http://localhost:5173`.
+The app starts at `http://localhost:5174` (override with `VITE_DEV_PORT`).
 
 ### The Odds API (required for sportsbook odds)
 

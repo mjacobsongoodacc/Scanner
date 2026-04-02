@@ -19,13 +19,13 @@ import ArbCard, { arbToKey } from "./ArbCard.jsx";
 import PropArbCard from "./PropArbCard.jsx";
 import BetCalculator from "./BetCalculator.jsx";
 import CollapsibleRejectedSection from "./CollapsibleRejectedSection.jsx";
-import Sidebar from "./ui/Sidebar.jsx";
+import PillNav from "./ui/PillNav.jsx";
 import LoadingBar from "./ui/LoadingBar.jsx";
 import MetricCard from "./ui/MetricCard.jsx";
 import NotificationsView from "./NotificationsView.jsx";
 import {
-  Bell, ChevronDown, RefreshCw, RotateCw, Activity, BarChart3,
-  TrendingUp, Calculator, Users, Eye, Target,
+  ChevronDown, RefreshCw, RotateCw, Activity, BarChart3,
+  TrendingUp, Users, Eye, Target,
   CheckCircle,
 } from "lucide-react";
 
@@ -345,15 +345,20 @@ export default function Dashboard({ config, onConfigChange }) {
   const cachedOdds = getCachedOdds(config.sport);
   const cacheTimeLabel = cachedOdds ? new Date(cachedOdds.ts).toLocaleString() : null;
 
-  const navItems = useMemo(
+  const pillNavItems = useMemo(
     () => [
-      { key: "arbs", title: "Scanner", icon: Target },
-      { key: "notifications", title: "Notifications", icon: Bell, showBadge: notificationsUnread },
-      { key: "props", title: "Props", icon: Users },
-      { key: "paper", title: "Paper Trading", icon: TrendingUp },
-      { key: "games", title: "Games", icon: Activity },
-      { key: "kalshi", title: "Kalshi", icon: BarChart3 },
-      { key: "calc", title: "Calculator", icon: Calculator },
+      { key: "arbs", label: "Scanner", ariaLabel: "Scanner — market arbs" },
+      {
+        key: "notifications",
+        label: "Alerts",
+        ariaLabel: "Notifications",
+        showBadge: notificationsUnread,
+      },
+      { key: "props", label: "Props", ariaLabel: "Player props" },
+      { key: "paper", label: "Paper", ariaLabel: "Paper trading" },
+      { key: "games", label: "Games" },
+      { key: "kalshi", label: "Kalshi" },
+      { key: "calc", label: "Calc", ariaLabel: "Calculator" },
     ],
     [notificationsUnread]
   );
@@ -416,10 +421,28 @@ export default function Dashboard({ config, onConfigChange }) {
   return (
     <div className="app-shell fade-in-soft">
       <LoadingBar active={loading} />
-      <Sidebar items={navItems} active={tab} onChange={setTab} />
 
       <div className="app-main">
         <header className="app-topbar">
+          <div className="app-topbar-pill-row">
+            <PillNav
+              embedded
+              logo="/pill-logo.svg"
+              logoAlt="Arbitrage Scanner"
+              logoNavigateKey="arbs"
+              items={pillNavItems}
+              activeKey={tab}
+              onSelect={setTab}
+              className="dashboard-pill-nav"
+              ease="power2.out"
+              baseColor="#0e1116"
+              pillColor="#1c2433"
+              hoveredPillTextColor="#ebeef2"
+              pillTextColor="#ebeef2"
+              initialLoadAnimation={false}
+            />
+          </div>
+          <div className="app-topbar-toolbar">
           <div className="app-topbar-left">
             <div className="sport-pill-wrap">
               <button
@@ -478,6 +501,7 @@ export default function Dashboard({ config, onConfigChange }) {
               <RotateCw size={12} />
               Force All
             </button>
+          </div>
           </div>
         </header>
 
@@ -734,11 +758,11 @@ export default function Dashboard({ config, onConfigChange }) {
                           {crossImp.toFixed(4)}
                         </span>
                       )}
-                      <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{g.commence ? new Date(g.commence).toLocaleString() : ""}</div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-dim)" }}>{g.commence ? new Date(g.commence).toLocaleString() : ""}</div>
                     </div>
                   </div>
                   <div style={{ padding: "6px 0" }}>
-                    <div style={{ padding: "4px 18px", fontSize: 10, color: "var(--green)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Moneyline</div>
+                    <div style={{ padding: "4px 18px", fontSize: 10, color: "var(--green)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em" }}>Moneyline</div>
                     <div className="table-scroll table-scroll--odds">
                       <div className="odds-table-header" style={{ gridTemplateColumns: "140px 90px 90px 90px 90px" }}>
                         <span>Book</span>
@@ -754,16 +778,16 @@ export default function Dashboard({ config, onConfigChange }) {
                         const isAwayBest = aDec && Math.abs(aDec - bestAway) < 0.001;
                         return (
                           <div key={bi} className="odds-row" style={{ gridTemplateColumns: "140px 90px 90px 90px 90px" }}>
-                            <span style={{ color: "var(--text-muted)" }}>{name}</span>
+                            <span style={{ color: "var(--text-muted)", fontWeight: 600 }}>{name}</span>
                             <span
                               className="type-mono"
-                              style={{ textAlign: "right", color: isHomeBest ? "var(--green)" : "var(--text-secondary)", fontWeight: isHomeBest ? 600 : 470 }}
+                              style={{ textAlign: "right", color: isHomeBest ? "var(--green)" : "var(--text-secondary)", fontWeight: isHomeBest ? 800 : 600 }}
                             >
                               {formatAmerican(odds.home)}
                             </span>
                             <span
                               className="type-mono"
-                              style={{ textAlign: "right", color: isAwayBest ? "var(--green)" : "var(--text-secondary)", fontWeight: isAwayBest ? 600 : 470 }}
+                              style={{ textAlign: "right", color: isAwayBest ? "var(--green)" : "var(--text-secondary)", fontWeight: isAwayBest ? 800 : 600 }}
                             >
                               {formatAmerican(odds.away)}
                             </span>
@@ -780,11 +804,11 @@ export default function Dashboard({ config, onConfigChange }) {
                   </div>
                   {spreadBooks.length > 0 && (
                     <div style={{ padding: "6px 0", borderTop: "1px solid var(--border-subtle)" }}>
-                      <div style={{ padding: "4px 18px", fontSize: 10, color: "var(--purple)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Spreads</div>
+                      <div style={{ padding: "4px 18px", fontSize: 10, color: "var(--purple)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em" }}>Spreads</div>
                       {spreadBooks.slice(0, 4).map(([name, lines], si) => (
-                        <div key={si} style={{ display: "flex", padding: "3px 18px", fontSize: 11 }}>
-                          <span style={{ width: 140, color: "var(--text-muted)" }}>{name}</span>
-                          <span className="type-mono" style={{ flex: 1, color: "var(--text-secondary)" }}>
+                        <div key={si} style={{ display: "flex", padding: "3px 18px", fontSize: 11, fontWeight: 600 }}>
+                          <span style={{ width: 140, color: "var(--text-muted)", fontWeight: 600 }}>{name}</span>
+                          <span className="type-mono" style={{ flex: 1, color: "var(--text-secondary)", fontWeight: 600 }}>
                             {lines.map(l => `${l.name.split(" ").pop()} ${l.point > 0 ? "+" : ""}${l.point} (${formatAmerican(l.price)})`).join("  |  ")}
                           </span>
                         </div>

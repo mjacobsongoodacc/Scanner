@@ -108,7 +108,7 @@ export default function PaperTradingDashboard({ defaultExpanded = false }) {
 
           <div className="paper-chart-section">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
-              <span style={{ fontSize: 11, color: "var(--text-dim)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>PnL History</span>
+              <span style={{ fontSize: 11, color: "var(--text-dim)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em" }}>PnL History</span>
               <div style={{ display: "flex", gap: 6 }}>
                 <button className="btn btn-accent-green btn-xs" onClick={() => pt.exportPnLToExcel()}>
                   <FileSpreadsheet size={11} /> Excel
@@ -162,7 +162,7 @@ export default function PaperTradingDashboard({ defaultExpanded = false }) {
           )}
 
           <div style={{ padding: "18px 20px" }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", marginBottom: 12, letterSpacing: "-0.01em" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text-primary)", marginBottom: 12, letterSpacing: "-0.01em" }}>
               Trade History
             </div>
             {pt.trades.length === 0 ? (
