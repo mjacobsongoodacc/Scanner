@@ -24,9 +24,10 @@
   --red-border: rgba(240, 91, 91, 0.32);
 
   --text-primary: #ebeef2;
-  --text-secondary: #8e95a0;
-  --text-muted: #5d6470;
-  --text-dim: #3e434d;
+  --text-secondary: #c4cad4;
+  --text-muted: #aeb6c2;
+  /* Overlines / table headers / metric labels — readable on dark bg */
+  --text-dim: #ffffff;
 
   --green: var(--accent);
   --green-dim: var(--accent-dim);

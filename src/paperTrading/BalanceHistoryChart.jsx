@@ -1,23 +1,27 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 
-function catmullRomToBezier(pts) {
-  if (pts.length < 2) return "";
-  if (pts.length === 2) {
-    return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
-  }
-  let d = `M ${pts[0].x} ${pts[0].y}`;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[Math.max(0, i - 1)];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const p3 = pts[Math.min(pts.length - 1, i + 2)];
-    const cp1x = p1.x + (p2.x - p0.x) / 6;
-    const cp1y = p1.y + (p2.y - p0.y) / 6;
-    const cp2x = p2.x - (p3.x - p1.x) / 6;
-    const cp2y = p2.y - (p3.y - p1.y) / 6;
-    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+/** Straight segments — stable for finance data (avoids Catmull-Rom loops on clustered x). */
+function buildLinearPath(pixelPoints) {
+  if (!pixelPoints.length) return "";
+  if (pixelPoints.length === 1) return `M ${pixelPoints[0].x} ${pixelPoints[0].y}`;
+  let d = `M ${pixelPoints[0].x} ${pixelPoints[0].y}`;
+  for (let i = 1; i < pixelPoints.length; i++) {
+    d += ` L ${pixelPoints[i].x} ${pixelPoints[i].y}`;
   }
   return d;
+}
+
+/** Same instant → keep last balance (fixes vertical scribbles). */
+function dedupeByTimestamp(points) {
+  const out = [];
+  for (const p of points) {
+    if (!out.length || out[out.length - 1].t !== p.t) {
+      out.push({ ...p });
+    } else {
+      out[out.length - 1] = { ...p };
+    }
+  }
+  return out;
 }
 
 export default function BalanceHistoryChart({ balanceHistory = [] }) {
@@ -40,15 +44,24 @@ export default function BalanceHistoryChart({ balanceHistory = [] }) {
   }, []);
 
   const chart = useMemo(() => {
-    const data = balanceHistory.length ? balanceHistory : [{ ts: new Date().toISOString(), balance: 1000 }];
-    const points = data.map((d) => ({
+    const raw = balanceHistory.length ? balanceHistory : [{ ts: new Date().toISOString(), balance: 1000 }];
+    let points = raw.map((d) => ({
       t: new Date(d.ts).getTime(),
       balance: Number(d.balance) || 1000,
     }));
     points.sort((a, b) => a.t - b.t);
-    const minT = points[0]?.t ?? Date.now();
-    const maxT = points[points.length - 1]?.t ?? Date.now();
-    const rangeT = maxT - minT || 1;
+    points = dedupeByTimestamp(points);
+
+    let minT = points[0]?.t ?? Date.now();
+    let maxT = points[points.length - 1]?.t ?? Date.now();
+    let rangeT = maxT - minT;
+    if (rangeT < 1) {
+      const pad = 86_400_000;
+      minT -= pad;
+      maxT += pad;
+      rangeT = maxT - minT;
+    }
+
     const balances = points.map((p) => p.balance);
     const minB = Math.min(...balances, 1000);
     const maxB = Math.max(...balances, 1000);
@@ -64,25 +77,61 @@ export default function BalanceHistoryChart({ balanceHistory = [] }) {
     const x = (t) => pad.left + ((t - minT) / rangeT) * chartW;
     const y = (b) => pad.top + chartH - ((b - yMin) / rangeB) * chartH;
 
-    const pixelPoints = points.map((p) => ({ x: x(p.t), y: y(p.balance) }));
-    const linePath = catmullRomToBezier(pixelPoints);
+    const pixelPoints = points.map((p) => ({ x: x(p.t), y: y(p.balance), t: p.t, balance: p.balance }));
+    const linePath = buildLinearPath(pixelPoints);
     const areaPath = linePath
       ? `${linePath} L ${pixelPoints[pixelPoints.length - 1].x} ${pad.top + chartH} L ${pixelPoints[0].x} ${pad.top + chartH} Z`
       : "";
 
     const yTicks = [yMin, yMin + rangeB * 0.25, yMin + rangeB * 0.5, yMin + rangeB * 0.75, yMax];
-    const xTicks =
-      points.length >= 2
-        ? [points[0], points[Math.floor(points.length * 0.5)], points[points.length - 1]]
-        : points;
 
-    return { linePath, areaPath, pad, chartH, chartW, x, y, points, yTicks, xTicks, yMin, yMax, minT, maxT, pixelPoints };
+    const formatTime = (ts) => {
+      const d = new Date(ts);
+      return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    };
+
+    const xTickMarks = [];
+    if (points.length >= 1) {
+      const n = points.length;
+      const idxCandidates = n === 1 ? [0] : [0, Math.floor(n / 2), n - 1];
+      const seenLabels = new Set();
+      for (const i of idxCandidates) {
+        const p = points[i];
+        const label = formatTime(p.t);
+        if (seenLabels.has(label) && n > 1) continue;
+        seenLabels.add(label);
+        const anchor = i === 0 ? "start" : i === n - 1 ? "end" : "middle";
+        const dx = i === 0 ? 4 : i === n - 1 ? -4 : 0;
+        xTickMarks.push({ t: p.t, label, anchor, dx });
+      }
+      if (xTickMarks.length === 1 && n > 1) {
+        const last = points[n - 1];
+        const label = formatTime(last.t);
+        if (label !== xTickMarks[0].label) {
+          xTickMarks.push({ t: last.t, label, anchor: "end", dx: -4 });
+        }
+      }
+    }
+
+    return {
+      linePath,
+      areaPath,
+      pad,
+      chartH,
+      chartW,
+      x,
+      y,
+      points,
+      yTicks,
+      xTickMarks,
+      yMin,
+      yMax,
+      minT,
+      maxT,
+      pixelPoints,
+    };
   }, [balanceHistory, width, height]);
 
-  const formatTime = (ts) => {
-    const d = new Date(ts);
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  };
   const formatBalance = (b) => `$${Math.round(b).toLocaleString()}`;
 
   const lastPoint = chart.points[chart.points.length - 1];
@@ -132,7 +181,7 @@ export default function BalanceHistoryChart({ balanceHistory = [] }) {
               x={chart.pad.left - 8}
               y={yPos + 4}
               textAnchor="end"
-              fill="var(--text-muted)"
+              fill="var(--text-primary)"
               fontSize={11}
               style={{ fontFamily: "var(--font-mono)", fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
             >
@@ -140,17 +189,17 @@ export default function BalanceHistoryChart({ balanceHistory = [] }) {
             </text>
           );
         })}
-        {chart.xTicks.map((p, i) => (
+        {chart.xTickMarks.map((tick, i) => (
           <text
-            key={`xl-${i}`}
-            x={chart.x(p.t)}
+            key={`xl-${i}-${tick.label}`}
+            x={chart.x(tick.t) + (tick.dx || 0)}
             y={height - 8}
-            textAnchor="middle"
-            fill="var(--text-muted)"
+            textAnchor={tick.anchor}
+            fill="var(--text-primary)"
             fontSize={11}
             style={{ fontFamily: "var(--font-sans)" }}
           >
-            {formatTime(p.t)}
+            {tick.label}
           </text>
         ))}
         {chart.areaPath && <path d={chart.areaPath} fill="url(#chartFillTeal)" />}
