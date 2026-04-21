@@ -1,5 +1,6 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { Renderer, Program, Mesh, Triangle, Vec2 } from "ogl";
+import { supportsWebGL } from "../utils/supportsWebGL.js";
 import "./DarkVeil.css";
 
 const vertex = `
@@ -84,18 +85,36 @@ export default function DarkVeil({
   resolutionScale = 1,
 }) {
   const ref = useRef(null);
+  const [webglReady, setWebglReady] = useState(false);
+
+  // Capability check runs after mount to avoid SSR/hydration mismatches.
+  useEffect(() => {
+    setWebglReady(supportsWebGL());
+  }, []);
 
   useEffect(() => {
+    if (!webglReady) return undefined;
     const canvas = ref.current;
     if (!canvas) return undefined;
     const parent = canvas.parentElement;
     if (!parent) return undefined;
 
-    const renderer = new Renderer({
-      dpr: Math.min(window.devicePixelRatio, 2),
-      canvas,
-      webgl: 1,
-    });
+    let renderer;
+    try {
+      renderer = new Renderer({
+        dpr: Math.min(window.devicePixelRatio, 2),
+        canvas,
+        webgl: 1,
+      });
+    } catch (err) {
+      // Capability check passed but renderer creation still failed
+      // (driver blocklist, OOM, etc). Fail gracefully.
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("DarkVeil: failed to create WebGL renderer", err);
+      }
+      setWebglReady(false);
+      return undefined;
+    }
 
     const { gl } = renderer;
     const geometry = new Triangle(gl);
@@ -145,8 +164,20 @@ export default function DarkVeil({
     return () => {
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", resize);
+      // Drop references and force the GL context to release so navigating
+      // away/remounting doesn't leak contexts (browsers cap at ~16).
+      try {
+        if (typeof renderer.dispose === "function") {
+          renderer.dispose();
+        }
+        const loseCtx = gl && gl.getExtension && gl.getExtension("WEBGL_lose_context");
+        if (loseCtx) loseCtx.loseContext();
+      } catch {
+        // ignore cleanup errors
+      }
     };
-  }, [hueShift, noiseIntensity, scanlineIntensity, speed, scanlineFrequency, warpAmount, resolutionScale]);
+  }, [webglReady, hueShift, noiseIntensity, scanlineIntensity, speed, scanlineFrequency, warpAmount, resolutionScale]);
 
+  if (!webglReady) return null;
   return <canvas ref={ref} className="darkveil-canvas" />;
 }
